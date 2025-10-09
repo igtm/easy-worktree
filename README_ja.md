@@ -161,11 +161,11 @@ wt clean --all              # すべての clean worktree を削除（確認な�
 よく使う worktree にシンボリックリンクでショートカットを作成できます。
 
 ```bash
-wt alias current feature-123           # current という名前でエイリアス作成
-wt alias dev feature-xyz               # dev という名前でエイリアス作成
-wt alias --override current hoge3      # 既存のエイリアスを上書き
-wt alias --list                        # エイリアス一覧を表示
-wt alias --remove current              # エイリアスを削除
+wt alias current feature-123    # current という名前でエイリアス作成
+wt alias dev feature-xyz        # dev という名前でエイリアス作成
+wt alias current hoge3          # 既存のエイリアスを自動的に上書き
+wt alias --list                 # エイリアス一覧を表示
+wt alias --remove current       # エイリアスを削除
 ```
 
 ### 全 worktree の状態を確認

@@ -128,9 +128,9 @@ MESSAGES = {
         'en': 'Usage: wt alias <name> <worktree> | wt alias --list | wt alias --remove <name>',
         'ja': '使用方法: wt alias <名前> <worktree> | wt alias --list | wt alias --remove <名前>'
     },
-    'alias_exists_suggestion': {
-        'en': 'To override, use: wt alias --override {} {}',
-        'ja': '上書きするには次を実行してください: wt alias --override {} {}'
+    'alias_updated': {
+        'en': 'Updated alias: {} -> {}',
+        'ja': 'エイリアスを更新しました: {} -> {}'
     },
     'no_clean_targets': {
         'en': 'No worktrees to clean',
@@ -454,44 +454,77 @@ def cmd_add(args: list[str]):
             check=False
         )
     else:
-        # 新しいブランチを作成
+        # ブランチ名として work_name を使用
         branch_name = work_name
-        # デフォルトブランチを探す（origin/main または origin/master）
-        result = run_command(
-            ["git", "symbolic-ref", "refs/remotes/origin/HEAD", "--short"],
+
+        # ローカルまたはリモートにブランチが既に存在するかチェック
+        check_local = run_command(
+            ["git", "rev-parse", "--verify", branch_name],
+            cwd=base_dir,
+            check=False
+        )
+        check_remote = run_command(
+            ["git", "rev-parse", "--verify", f"origin/{branch_name}"],
             cwd=base_dir,
             check=False
         )
 
-        if result.returncode == 0 and result.stdout.strip():
-            base_branch = result.stdout.strip()
-        else:
-            # symbolic-ref が失敗した場合は手動でチェック
-            result_main = run_command(
-                ["git", "rev-parse", "--verify", "origin/main"],
-                cwd=base_dir,
-                check=False
-            )
-            result_master = run_command(
-                ["git", "rev-parse", "--verify", "origin/master"],
-                cwd=base_dir,
-                check=False
-            )
-
-            if result_main.returncode == 0:
-                base_branch = "origin/main"
-            elif result_master.returncode == 0:
-                base_branch = "origin/master"
+        if check_local.returncode == 0 or check_remote.returncode == 0:
+            # 既存ブランチを使用
+            if check_remote.returncode == 0:
+                # リモートブランチが存在する場合
+                print(msg('creating_worktree', worktree_path))
+                result = run_command(
+                    ["git", "worktree", "add", str(worktree_path), f"origin/{branch_name}"],
+                    cwd=base_dir,
+                    check=False
+                )
             else:
-                print(msg('error', msg('default_branch_not_found')), file=sys.stderr)
-                sys.exit(1)
+                # ローカルブランチのみ存在する場合
+                print(msg('creating_worktree', worktree_path))
+                result = run_command(
+                    ["git", "worktree", "add", str(worktree_path), branch_name],
+                    cwd=base_dir,
+                    check=False
+                )
+        else:
+            # 新しいブランチを作成
+            # デフォルトブランチを探す（origin/main または origin/master）
+            result = run_command(
+                ["git", "symbolic-ref", "refs/remotes/origin/HEAD", "--short"],
+                cwd=base_dir,
+                check=False
+            )
 
-        print(msg('creating_branch', base_branch, work_name))
-        result = run_command(
-            ["git", "worktree", "add", "-b", work_name, str(worktree_path), base_branch],
-            cwd=base_dir,
-            check=False
-        )
+            if result.returncode == 0 and result.stdout.strip():
+                base_branch = result.stdout.strip()
+            else:
+                # symbolic-ref が失敗した場合は手動でチェック
+                result_main = run_command(
+                    ["git", "rev-parse", "--verify", "origin/main"],
+                    cwd=base_dir,
+                    check=False
+                )
+                result_master = run_command(
+                    ["git", "rev-parse", "--verify", "origin/master"],
+                    cwd=base_dir,
+                    check=False
+                )
+
+                if result_main.returncode == 0:
+                    base_branch = "origin/main"
+                elif result_master.returncode == 0:
+                    base_branch = "origin/master"
+                else:
+                    print(msg('error', msg('default_branch_not_found')), file=sys.stderr)
+                    sys.exit(1)
+
+            print(msg('creating_branch', base_branch, work_name))
+            result = run_command(
+                ["git", "worktree", "add", "-b", work_name, str(worktree_path), base_branch],
+                cwd=base_dir,
+                check=False
+            )
 
     if result.returncode == 0:
         print(msg('completed_worktree', worktree_path))
@@ -500,8 +533,13 @@ def cmd_add(args: list[str]):
         if alias_name:
             alias_path = base_dir.parent / alias_name
             if alias_path.exists():
-                print(msg('error', msg('already_exists', alias_name)), file=sys.stderr)
-                print(msg('alias_exists_suggestion', alias_name, work_name), file=sys.stderr)
+                # 既存のエイリアスを削除して上書き
+                if alias_path.is_symlink():
+                    alias_path.unlink()
+                    alias_path.symlink_to(worktree_path, target_is_directory=True)
+                    print(msg('alias_updated', alias_name, work_name))
+                else:
+                    print(msg('error', f'{alias_name} exists but is not a symlink'), file=sys.stderr)
             else:
                 alias_path.symlink_to(worktree_path, target_is_directory=True)
                 print(msg('alias_created', alias_name, work_name))
@@ -789,11 +827,6 @@ def cmd_alias(args: list[str]):
         print(msg('alias_removed', alias_name))
         return
 
-    # --override オプションをチェック
-    override = '--override' in args
-    if override:
-        args.remove('--override')
-
     # エイリアス作成
     if len(args) < 2:
         print(msg('usage_alias'), file=sys.stderr)
@@ -810,19 +843,19 @@ def cmd_alias(args: list[str]):
         print(msg('error', f'Worktree not found: {worktree_name}'), file=sys.stderr)
         sys.exit(1)
 
-    # エイリアスがすでに存在するかチェック
+    # エイリアスがすでに存在する場合は上書き
     if alias_path.exists():
-        if not override:
-            print(msg('error', msg('already_exists', alias_name)), file=sys.stderr)
-            print(msg('alias_exists_suggestion', alias_name, worktree_name), file=sys.stderr)
-            sys.exit(1)
-        # --override が指定されている場合は既存のエイリアスを削除
         if alias_path.is_symlink():
             alias_path.unlink()
-
-    # シンボリックリンクを作成
-    alias_path.symlink_to(worktree_path, target_is_directory=True)
-    print(msg('alias_created', alias_name, worktree_name))
+            alias_path.symlink_to(worktree_path, target_is_directory=True)
+            print(msg('alias_updated', alias_name, worktree_name))
+        else:
+            print(msg('error', f'{alias_name} exists but is not a symlink'), file=sys.stderr)
+            sys.exit(1)
+    else:
+        # シンボリックリンクを作成
+        alias_path.symlink_to(worktree_path, target_is_directory=True)
+        print(msg('alias_created', alias_name, worktree_name))
 
 
 def cmd_status(args: list[str]):
@@ -897,8 +930,7 @@ def show_help():
         print("  rm <作業名>                         - worktree を削除")
         print("  remove <作業名>                     - worktree を削除")
         print("  clean [--dry-run] [--days N]       - 未使用の worktree を削除")
-        print("  alias <名前> <worktree>            - worktree のエイリアスを作成")
-        print("  alias --override <名前> <worktree> - エイリアスを上書き")
+        print("  alias <名前> <worktree>            - worktree のエイリアスを作成/更新")
         print("  alias --list                        - エイリアス一覧を表示")
         print("  alias --remove <名前>              - エイリアスを削除")
         print("  status [--dirty] [--short]         - 全 worktree の状態を表示")
@@ -921,8 +953,7 @@ def show_help():
         print("  rm <work_name>                       - Remove a worktree")
         print("  remove <work_name>                   - Remove a worktree")
         print("  clean [--dry-run] [--days N]        - Remove unused worktrees")
-        print("  alias <name> <worktree>             - Create an alias for a worktree")
-        print("  alias --override <name> <worktree>  - Override an existing alias")
+        print("  alias <name> <worktree>             - Create or update an alias for a worktree")
         print("  alias --list                         - List aliases")
         print("  alias --remove <name>               - Remove an alias")
         print("  status [--dirty] [--short]          - Show status of all worktrees")
@@ -935,7 +966,7 @@ def show_help():
 
 def show_version():
     """Show version information"""
-    print("easy-worktree version 0.0.3")
+    print("easy-worktree version 0.0.4")
 
 
 def main():

@@ -163,11 +163,11 @@ wt clean --all              # Remove all clean worktrees without confirmation
 Create symbolic link shortcuts to frequently used worktrees.
 
 ```bash
-wt alias current feature-123           # Create alias named 'current'
-wt alias dev feature-xyz               # Create alias named 'dev'
-wt alias --override current hoge3      # Override existing alias
-wt alias --list                        # List all aliases
-wt alias --remove current              # Remove an alias
+wt alias current feature-123    # Create alias named 'current'
+wt alias dev feature-xyz        # Create alias named 'dev'
+wt alias current hoge3          # Automatically override existing alias
+wt alias --list                 # List all aliases
+wt alias --remove current       # Remove an alias
 ```
 
 ### Check status of all worktrees
