@@ -30,7 +30,7 @@ Repository = "https://github.com/igtm/easy-worktree"
 Issues = "https://github.com/igtm/easy-worktree/issues"
 
 [project.scripts]
-wt = "main:main"
+wt = "easy_worktree:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["main.py"]
+packages = ["easy_worktree"]
