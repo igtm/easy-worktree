@@ -85,6 +85,46 @@ wt rm feature-1
 wt remove feature-1
 ```
 
+### 初期化 hook（post-add）
+
+worktree 作成後に自動的に実行されるスクリプトを設定できます。
+
+**Hook の配置場所**: `_base/.wt/post-add`
+
+```bash
+# Hook スクリプトの作成例
+mkdir -p WT_repo/_base/.wt
+cat > WT_repo/_base/.wt/post-add << 'EOF'
+#!/bin/bash
+set -e
+
+echo "Initializing worktree: $WT_WORKTREE_NAME"
+
+# npm パッケージのインストール
+if [ -f package.json ]; then
+    npm install
+fi
+
+# .env ファイルのコピー
+if [ -f "$WT_BASE_DIR/.env.example" ]; then
+    cp "$WT_BASE_DIR/.env.example" .env
+fi
+
+echo "Setup completed!"
+EOF
+
+chmod +x WT_repo/_base/.wt/post-add
+```
+
+**利用可能な環境変数**:
+- `WT_WORKTREE_PATH`: 作成された worktree のパス
+- `WT_WORKTREE_NAME`: worktree の名前
+- `WT_BASE_DIR`: `_base/` ディレクトリのパス
+- `WT_BRANCH`: ブランチ名
+- `WT_ACTION`: アクション名（`add`）
+
+Hook は新しく作成された worktree ディレクトリ内で実行されます。
+
 ### その他の git worktree コマンド
 
 `wt` は他の git worktree コマンドもサポートしています：

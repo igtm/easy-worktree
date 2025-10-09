@@ -105,6 +105,18 @@ MESSAGES = {
     'default_branch_not_found': {
         'en': 'Could not find default branch (main/master)',
         'ja': 'デフォルトブランチ (main/master) が見つかりません'
+    },
+    'running_hook': {
+        'en': 'Running post-add hook: {}',
+        'ja': 'post-add hook を実行中: {}'
+    },
+    'hook_not_executable': {
+        'en': 'Warning: hook is not executable: {}',
+        'ja': '警告: hook が実行可能ではありません: {}'
+    },
+    'hook_failed': {
+        'en': 'Warning: hook exited with code {}',
+        'ja': '警告: hook が終了コード {} で終了しました'
     }
 }
 
@@ -242,6 +254,43 @@ def cmd_init(args: list[str]):
     print(msg('use_wt_from', wt_parent_dir))
 
 
+def run_post_add_hook(worktree_path: Path, work_name: str, base_dir: Path, branch: str = None):
+    """worktree 作成後の hook を実行"""
+    # .wt/post-add を探す
+    hook_path = base_dir / ".wt" / "post-add"
+
+    if not hook_path.exists() or not hook_path.is_file():
+        return  # hook がなければ何もしない
+
+    if not os.access(hook_path, os.X_OK):
+        print(msg('hook_not_executable', hook_path), file=sys.stderr)
+        return
+
+    # 環境変数を設定
+    env = os.environ.copy()
+    env.update({
+        'WT_WORKTREE_PATH': str(worktree_path),
+        'WT_WORKTREE_NAME': work_name,
+        'WT_BASE_DIR': str(base_dir),
+        'WT_BRANCH': branch or work_name,
+        'WT_ACTION': 'add'
+    })
+
+    print(msg('running_hook', hook_path))
+    try:
+        result = subprocess.run(
+            [str(hook_path)],
+            cwd=worktree_path,  # worktree 内で実行
+            env=env,
+            check=False
+        )
+
+        if result.returncode != 0:
+            print(msg('hook_failed', result.returncode), file=sys.stderr)
+    except Exception as e:
+        print(msg('error', str(e)), file=sys.stderr)
+
+
 def cmd_add(args: list[str]):
     """wt add <work_name> [<base_branch>] - Add a worktree"""
     if len(args) < 1:
@@ -269,17 +318,19 @@ def cmd_add(args: list[str]):
 
     # ブランチ名が指定されている場合は既存ブランチをチェックアウト
     # 指定されていない場合は新しいブランチを作成
+    branch_name = None
     if len(args) >= 2:
         # 既存ブランチをチェックアウト
-        branch = args[1]
+        branch_name = args[1]
         print(msg('creating_worktree', worktree_path))
         result = run_command(
-            ["git", "worktree", "add", str(worktree_path), branch],
+            ["git", "worktree", "add", str(worktree_path), branch_name],
             cwd=base_dir,
             check=False
         )
     else:
         # 新しいブランチを作成
+        branch_name = work_name
         # デフォルトブランチを探す（origin/main または origin/master）
         result = run_command(
             ["git", "symbolic-ref", "refs/remotes/origin/HEAD", "--short"],
@@ -319,6 +370,8 @@ def cmd_add(args: list[str]):
 
     if result.returncode == 0:
         print(msg('completed_worktree', worktree_path))
+        # post-add hook を実行
+        run_post_add_hook(worktree_path, work_name, base_dir, branch_name)
     else:
         # エラーメッセージを表示
         if result.stderr:
