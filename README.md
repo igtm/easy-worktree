@@ -1,24 +1,26 @@
 # easy-worktree
 
-Git worktree を簡単に管理するための CLI ツール
+A CLI tool for easy Git worktree management
 
-## 概要
+[日本語版 README](README_ja.md)
 
-`easy-worktree` は git worktree の面倒な部分を慣習で決めることで、考えることを少なくするツールです。
+## Overview
 
-### 主な特徴
+`easy-worktree` simplifies git worktree management by establishing conventions, reducing the cognitive load of managing multiple working trees.
 
-- **決まったディレクトリ構成**: `WT_<repository_name>/` の中に `_base/` ディレクトリを作り、これがリポジトリの本体となります
-- **簡単な worktree 管理**: `_base/` から worktree を作成・削除
-- **自動的なブランチ更新**: worktree 作成時に `git fetch --all` を自動実行
+### Key Features
 
-## インストール
+- **Standardized directory structure**: Creates a `_base/` directory within `WT_<repository_name>/` as the main repository
+- **Easy worktree management**: Create and remove worktrees from `_base/`
+- **Automatic branch updates**: Runs `git fetch --all` automatically when creating worktrees
+
+## Installation
 
 ```bash
 pip install easy-worktree
 ```
 
-または開発版をインストール:
+Or install the development version:
 
 ```bash
 git clone https://github.com/igtm/easy-worktree.git
@@ -26,75 +28,75 @@ cd easy-worktree
 pip install -e .
 ```
 
-## 使い方
+## Usage
 
-### 新しいリポジトリをクローン
+### Clone a new repository
 
 ```bash
 wt clone https://github.com/user/repo.git
 ```
 
-これにより以下の構成が作成されます：
+This creates the following structure:
 
 ```
 WT_repo/
-  _base/  # リポジトリの本体（基本的にいじらない）
+  _base/  # Main repository (typically don't modify directly)
 ```
 
-### 既存のリポジトリを easy-worktree 構成に変換
+### Convert an existing repository to easy-worktree structure
 
 ```bash
 cd my-repo/
 wt init
 ```
 
-現在のディレクトリが `../WT_my-repo/_base/` に移動されます。
+The current directory will be moved to `../WT_my-repo/_base/`.
 
-### worktree を追加
+### Add a worktree
 
 ```bash
 cd WT_repo/
 wt add feature-1
 ```
 
-これにより以下の構成になります：
+This creates the following structure:
 
 ```
 WT_repo/
   _base/
-  feature-1/  # 作業用 worktree
+  feature-1/  # Working worktree
 ```
 
-ブランチ名を指定することもできます：
+You can also specify a branch name:
 
 ```bash
 wt add feature-1 main
 ```
 
-### worktree 一覧を表示
+### List worktrees
 
 ```bash
 wt list
 ```
 
-### worktree を削除
+### Remove a worktree
 
 ```bash
 wt rm feature-1
-# または
+# or
 wt remove feature-1
 ```
 
-### 初期化 hook（post-add）
+### Initialization hook (post-add)
 
-worktree 作成後に自動的に実行されるスクリプトを設定できます。
+You can set up a script to run automatically after creating a worktree.
 
-**Hook の配置場所**: `_base/.wt/post-add`
+**Hook location**: `_base/.wt/post-add`
 
-**自動作成**: `wt clone` または `wt init` を実行すると、テンプレートファイルが自動的に `_base/.wt/post-add` に作成されます（既に存在する場合は上書きしません）。このファイルを編集して、プロジェクト固有の初期化処理を記述してください。
+**Automatic creation**: When you run `wt clone` or `wt init`, a template file is automatically created at `_base/.wt/post-add` (won't overwrite if it already exists). Edit this file to describe your project-specific initialization process.
 
 ```bash
-# Hook スクリプトの編集例
+# Example: editing the hook script
 vim WT_repo/_base/.wt/post-add
 ```
 
@@ -104,12 +106,12 @@ set -e
 
 echo "Initializing worktree: $WT_WORKTREE_NAME"
 
-# npm パッケージのインストール
+# Install npm packages
 if [ -f package.json ]; then
     npm install
 fi
 
-# .env ファイルのコピー
+# Copy .env file
 if [ -f "$WT_BASE_DIR/.env.example" ]; then
     cp "$WT_BASE_DIR/.env.example" .env
 fi
@@ -117,24 +119,24 @@ fi
 echo "Setup completed!"
 ```
 
-実行権限を忘れずに：
+Don't forget to make it executable:
 
 ```bash
 chmod +x WT_repo/_base/.wt/post-add
 ```
 
-**利用可能な環境変数**:
-- `WT_WORKTREE_PATH`: 作成された worktree のパス
-- `WT_WORKTREE_NAME`: worktree の名前
-- `WT_BASE_DIR`: `_base/` ディレクトリのパス
-- `WT_BRANCH`: ブランチ名
-- `WT_ACTION`: アクション名（`add`）
+**Available environment variables**:
+- `WT_WORKTREE_PATH`: Path to the created worktree
+- `WT_WORKTREE_NAME`: Name of the worktree
+- `WT_BASE_DIR`: Path to the `_base/` directory
+- `WT_BRANCH`: Branch name
+- `WT_ACTION`: Action name (`add`)
 
-Hook は新しく作成された worktree ディレクトリ内で実行されます。
+The hook runs within the newly created worktree directory.
 
-### その他の git worktree コマンド
+### Other git worktree commands
 
-`wt` は他の git worktree コマンドもサポートしています：
+`wt` also supports other git worktree commands:
 
 ```bash
 wt prune
@@ -142,27 +144,27 @@ wt lock <worktree>
 wt unlock <worktree>
 ```
 
-## ディレクトリ構成
+## Directory Structure
 
 ```
-WT_<repository_name>/     # プロジェクトのルートディレクトリ
-  _base/                   # git リポジトリの本体
-  feature-1/               # worktree 1
-  bugfix-123/              # worktree 2
+WT_<repository_name>/     # Project root directory
+  _base/                   # Main git repository
+  feature-1/               # Worktree 1
+  bugfix-123/              # Worktree 2
   ...
 ```
 
-`WT_<repository_name>/` または worktree ディレクトリ内から `wt` コマンドを実行できます。
+You can run `wt` commands from `WT_<repository_name>/` or from within any worktree directory.
 
-## 必要要件
+## Requirements
 
 - Python >= 3.11
 - Git
 
-## ライセンス
+## License
 
 MIT License
 
-## 貢献
+## Contributing
 
-Issue や Pull Request を歓迎します！
+Issues and Pull Requests are welcome!
