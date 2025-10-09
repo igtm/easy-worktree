@@ -27,8 +27,8 @@ MESSAGES = {
         'ja': '使用方法: wt clone <repository_url>'
     },
     'usage_add': {
-        'en': 'Usage: wt add <work_name> [<branch>]',
-        'ja': '使用方法: wt add <作業名> [<branch>]'
+        'en': 'Usage: wt add <work_name> [<base_branch>]',
+        'ja': '使用方法: wt add <作業名> [<base_branch>]'
     },
     'usage_rm': {
         'en': 'Usage: wt rm <work_name>',
@@ -97,6 +97,14 @@ MESSAGES = {
     'completed_remove': {
         'en': 'Completed: removed {}',
         'ja': '完了: {} を削除しました'
+    },
+    'creating_branch': {
+        'en': "Creating new branch '{}' from '{}'",
+        'ja': "'{}' から新しいブランチ '{}' を作成"
+    },
+    'default_branch_not_found': {
+        'en': 'Could not find default branch (main/master)',
+        'ja': 'デフォルトブランチ (main/master) が見つかりません'
     }
 }
 
@@ -235,7 +243,7 @@ def cmd_init(args: list[str]):
 
 
 def cmd_add(args: list[str]):
-    """wt add <work_name> - Add a worktree"""
+    """wt add <work_name> [<base_branch>] - Add a worktree"""
     if len(args) < 1:
         print(msg('usage_add'), file=sys.stderr)
         sys.exit(1)
@@ -247,7 +255,6 @@ def cmd_add(args: list[str]):
         sys.exit(1)
 
     work_name = args[0]
-    branch = args[1] if len(args) > 1 else work_name
 
     # worktree のパスを決定（_base の親ディレクトリに作成）
     worktree_path = base_dir.parent / work_name
@@ -260,13 +267,55 @@ def cmd_add(args: list[str]):
     print(msg('fetching'))
     run_command(["git", "fetch", "--all"], cwd=base_dir)
 
-    # worktree を追加
-    print(msg('creating_worktree', worktree_path))
-    result = run_command(
-        ["git", "worktree", "add", str(worktree_path), branch],
-        cwd=base_dir,
-        check=False
-    )
+    # ブランチ名が指定されている場合は既存ブランチをチェックアウト
+    # 指定されていない場合は新しいブランチを作成
+    if len(args) >= 2:
+        # 既存ブランチをチェックアウト
+        branch = args[1]
+        print(msg('creating_worktree', worktree_path))
+        result = run_command(
+            ["git", "worktree", "add", str(worktree_path), branch],
+            cwd=base_dir,
+            check=False
+        )
+    else:
+        # 新しいブランチを作成
+        # デフォルトブランチを探す（origin/main または origin/master）
+        result = run_command(
+            ["git", "symbolic-ref", "refs/remotes/origin/HEAD", "--short"],
+            cwd=base_dir,
+            check=False
+        )
+
+        if result.returncode == 0 and result.stdout.strip():
+            base_branch = result.stdout.strip()
+        else:
+            # symbolic-ref が失敗した場合は手動でチェック
+            result_main = run_command(
+                ["git", "rev-parse", "--verify", "origin/main"],
+                cwd=base_dir,
+                check=False
+            )
+            result_master = run_command(
+                ["git", "rev-parse", "--verify", "origin/master"],
+                cwd=base_dir,
+                check=False
+            )
+
+            if result_main.returncode == 0:
+                base_branch = "origin/main"
+            elif result_master.returncode == 0:
+                base_branch = "origin/master"
+            else:
+                print(msg('error', msg('default_branch_not_found')), file=sys.stderr)
+                sys.exit(1)
+
+        print(msg('creating_branch', base_branch, work_name))
+        result = run_command(
+            ["git", "worktree", "add", "-b", work_name, str(worktree_path), base_branch],
+            cwd=base_dir,
+            check=False
+        )
 
     if result.returncode == 0:
         print(msg('completed_worktree', worktree_path))
@@ -340,13 +389,13 @@ def show_help():
         print("  wt <command> [options]")
         print()
         print("コマンド:")
-        print("  clone <repository_url>   - リポジトリをクローン")
-        print("  init                      - 既存リポジトリを WT_<repo>/_base/ に移動")
-        print("  add <作業名> [<branch>]  - worktree を追加")
-        print("  list                      - worktree 一覧を表示")
-        print("  rm <作業名>               - worktree を削除")
-        print("  remove <作業名>           - worktree を削除")
-        print("  <git-worktree-command>    - その他の git worktree コマンド")
+        print("  clone <repository_url>          - リポジトリをクローン")
+        print("  init                             - 既存リポジトリを WT_<repo>/_base/ に移動")
+        print("  add <作業名> [<base_branch>]    - worktree を追加（デフォルト: 新規ブランチ作成）")
+        print("  list                             - worktree 一覧を表示")
+        print("  rm <作業名>                      - worktree を削除")
+        print("  remove <作業名>                  - worktree を削除")
+        print("  <git-worktree-command>           - その他の git worktree コマンド")
         print()
         print("オプション:")
         print("  -h, --help     - このヘルプメッセージを表示")
@@ -358,13 +407,13 @@ def show_help():
         print("  wt <command> [options]")
         print()
         print("Commands:")
-        print("  clone <repository_url>   - Clone a repository")
-        print("  init                      - Move existing repo to WT_<repo>/_base/")
-        print("  add <work_name> [<branch>] - Add a worktree")
-        print("  list                      - List worktrees")
-        print("  rm <work_name>            - Remove a worktree")
-        print("  remove <work_name>        - Remove a worktree")
-        print("  <git-worktree-command>    - Other git worktree commands")
+        print("  clone <repository_url>            - Clone a repository")
+        print("  init                               - Move existing repo to WT_<repo>/_base/")
+        print("  add <work_name> [<base_branch>]   - Add a worktree (default: create new branch)")
+        print("  list                               - List worktrees")
+        print("  rm <work_name>                     - Remove a worktree")
+        print("  remove <work_name>                 - Remove a worktree")
+        print("  <git-worktree-command>             - Other git worktree commands")
         print()
         print("Options:")
         print("  -h, --help     - Show this help message")
