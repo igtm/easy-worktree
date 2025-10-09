@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "easy-worktree"
-version = "0.0.1"
+version = "0.0.3"
 description = "Git worktree を簡単に管理するための CLI ツール"
 readme = "README.md"
 requires-python = ">=3.11"

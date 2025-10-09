@@ -73,6 +73,12 @@ You can also specify a branch name:
 wt add feature-1 main
 ```
 
+Create a worktree and set an alias at the same time:
+
+```bash
+wt add feature-123 --alias current    # Create feature-123 and set 'current' alias
+```
+
 ### List worktrees
 
 ```bash
@@ -133,6 +139,46 @@ chmod +x WT_repo/_base/.wt/post-add
 - `WT_ACTION`: Action name (`add`)
 
 The hook runs within the newly created worktree directory.
+
+### List worktrees with details
+
+```bash
+wt list --verbose           # Show creation time, last commit, status
+wt list --sort age          # Sort by creation time
+wt list --sort name         # Sort by name
+```
+
+### Clean up unused worktrees
+
+Remove clean (no changes) worktrees in batch.
+
+```bash
+wt clean --dry-run          # Preview what will be removed
+wt clean --days 30          # Remove clean worktrees older than 30 days
+wt clean --all              # Remove all clean worktrees without confirmation
+```
+
+### Create worktree aliases
+
+Create symbolic link shortcuts to frequently used worktrees.
+
+```bash
+wt alias current feature-123           # Create alias named 'current'
+wt alias dev feature-xyz               # Create alias named 'dev'
+wt alias --override current hoge3      # Override existing alias
+wt alias --list                        # List all aliases
+wt alias --remove current              # Remove an alias
+```
+
+### Check status of all worktrees
+
+View git status of all worktrees at once.
+
+```bash
+wt status                   # Show status of all worktrees
+wt status --dirty           # Show only worktrees with changes
+wt status --short           # Concise display
+```
 
 ### Other git worktree commands
 

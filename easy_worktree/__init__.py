@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 import re
+from datetime import datetime
+import json
 
 
 # 言語判定
@@ -27,8 +29,8 @@ MESSAGES = {
         'ja': '使用方法: wt clone <repository_url>'
     },
     'usage_add': {
-        'en': 'Usage: wt add <work_name> [<base_branch>]',
-        'ja': '使用方法: wt add <作業名> [<base_branch>]'
+        'en': 'Usage: wt add <work_name> [<base_branch>] [--alias <name>]',
+        'ja': '使用方法: wt add <作業名> [<base_branch>] [--alias <名前>]'
     },
     'usage_rm': {
         'en': 'Usage: wt rm <work_name>',
@@ -117,6 +119,62 @@ MESSAGES = {
     'hook_failed': {
         'en': 'Warning: hook exited with code {}',
         'ja': '警告: hook が終了コード {} で終了しました'
+    },
+    'usage_clean': {
+        'en': 'Usage: wt clean [--dry-run] [--days N] [--all]',
+        'ja': '使用方法: wt clean [--dry-run] [--days N] [--all]'
+    },
+    'usage_alias': {
+        'en': 'Usage: wt alias <name> <worktree> | wt alias --list | wt alias --remove <name>',
+        'ja': '使用方法: wt alias <名前> <worktree> | wt alias --list | wt alias --remove <名前>'
+    },
+    'alias_exists_suggestion': {
+        'en': 'To override, use: wt alias --override {} {}',
+        'ja': '上書きするには次を実行してください: wt alias --override {} {}'
+    },
+    'no_clean_targets': {
+        'en': 'No worktrees to clean',
+        'ja': 'クリーンアップ対象の worktree がありません'
+    },
+    'clean_target': {
+        'en': 'Will remove: {} (created: {}, clean)',
+        'ja': '削除対象: {} (作成日時: {}, 変更なし)'
+    },
+    'clean_confirm': {
+        'en': 'Remove {} worktree(s)? [y/N]: ',
+        'ja': '{} 個の worktree を削除しますか？ [y/N]: '
+    },
+    'alias_created': {
+        'en': 'Created alias: {} -> {}',
+        'ja': 'エイリアスを作成しました: {} -> {}'
+    },
+    'alias_removed': {
+        'en': 'Removed alias: {}',
+        'ja': 'エイリアスを削除しました: {}'
+    },
+    'alias_not_found': {
+        'en': 'Alias not found: {}',
+        'ja': 'エイリアスが見つかりません: {}'
+    },
+    'worktree_name': {
+        'en': 'Worktree',
+        'ja': 'Worktree'
+    },
+    'branch_name': {
+        'en': 'Branch',
+        'ja': 'ブランチ'
+    },
+    'created_at': {
+        'en': 'Created',
+        'ja': '作成日時'
+    },
+    'last_commit': {
+        'en': 'Last Commit',
+        'ja': '最終コミット'
+    },
+    'status_label': {
+        'en': 'Status',
+        'ja': '状態'
     }
 }
 
@@ -357,6 +415,19 @@ def cmd_add(args: list[str]):
         print(msg('run_in_wt_dir'), file=sys.stderr)
         sys.exit(1)
 
+    # --alias オプションをチェック
+    alias_name = None
+    if '--alias' in args:
+        alias_index = args.index('--alias')
+        if alias_index + 1 < len(args):
+            alias_name = args[alias_index + 1]
+            # --alias とその値を削除
+            args.pop(alias_index)
+            args.pop(alias_index)
+        else:
+            print(msg('error', 'Missing alias name after --alias'), file=sys.stderr)
+            sys.exit(1)
+
     work_name = args[0]
 
     # worktree のパスを決定（_base の親ディレクトリに作成）
@@ -424,6 +495,17 @@ def cmd_add(args: list[str]):
 
     if result.returncode == 0:
         print(msg('completed_worktree', worktree_path))
+
+        # エイリアスを作成
+        if alias_name:
+            alias_path = base_dir.parent / alias_name
+            if alias_path.exists():
+                print(msg('error', msg('already_exists', alias_name)), file=sys.stderr)
+                print(msg('alias_exists_suggestion', alias_name, work_name), file=sys.stderr)
+            else:
+                alias_path.symlink_to(worktree_path, target_is_directory=True)
+                print(msg('alias_created', alias_name, work_name))
+
         # post-add hook を実行
         run_post_add_hook(worktree_path, work_name, base_dir, branch_name)
     else:
@@ -433,6 +515,64 @@ def cmd_add(args: list[str]):
         sys.exit(1)
 
 
+def get_worktree_info(base_dir: Path) -> list[dict]:
+    """worktree の詳細情報を取得"""
+    result = run_command(
+        ["git", "worktree", "list", "--porcelain"],
+        cwd=base_dir
+    )
+
+    worktrees = []
+    current = {}
+
+    for line in result.stdout.strip().split('\n'):
+        if not line:
+            if current:
+                worktrees.append(current)
+                current = {}
+            continue
+
+        if line.startswith('worktree '):
+            current['path'] = line.split(' ', 1)[1]
+        elif line.startswith('HEAD '):
+            current['head'] = line.split(' ', 1)[1]
+        elif line.startswith('branch '):
+            current['branch'] = line.split(' ', 1)[1].replace('refs/heads/', '')
+        elif line.startswith('detached'):
+            current['branch'] = 'DETACHED'
+
+    if current:
+        worktrees.append(current)
+
+    # 各 worktree の詳細情報を取得
+    for wt in worktrees:
+        path = Path(wt['path'])
+
+        # 作成日時（ディレクトリの作成時刻）
+        if path.exists():
+            stat_info = path.stat()
+            wt['created'] = datetime.fromtimestamp(stat_info.st_ctime)
+
+        # 最終コミット日時
+        result = run_command(
+            ["git", "log", "-1", "--format=%ct", wt.get('head', 'HEAD')],
+            cwd=base_dir,
+            check=False
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            wt['last_commit'] = datetime.fromtimestamp(int(result.stdout.strip()))
+
+        # git status（変更があるか）
+        result = run_command(
+            ["git", "status", "--porcelain"],
+            cwd=path,
+            check=False
+        )
+        wt['is_clean'] = result.returncode == 0 and not result.stdout.strip()
+
+    return worktrees
+
+
 def cmd_list(args: list[str]):
     """wt list - List worktrees"""
     base_dir = find_base_dir()
@@ -440,8 +580,48 @@ def cmd_list(args: list[str]):
         print(msg('error', msg('base_not_found')), file=sys.stderr)
         sys.exit(1)
 
-    result = run_command(["git", "worktree", "list"] + args, cwd=base_dir)
-    print(result.stdout, end='')
+    # --verbose または --sort オプションがある場合は詳細表示
+    verbose = '--verbose' in args or '-v' in args
+    sort_by = None
+
+    # ソートオプションを取得
+    for i, arg in enumerate(args):
+        if arg == '--sort' and i + 1 < len(args):
+            sort_by = args[i + 1]
+
+    if not verbose and not sort_by:
+        # 通常の git worktree list を実行
+        result = run_command(["git", "worktree", "list"] + args, cwd=base_dir)
+        print(result.stdout, end='')
+        return
+
+    # 詳細情報を取得
+    worktrees = get_worktree_info(base_dir)
+
+    # ソート
+    if sort_by == 'age' or sort_by == 'created':
+        worktrees.sort(key=lambda x: x.get('created', datetime.min))
+    elif sort_by == 'name':
+        worktrees.sort(key=lambda x: Path(x['path']).name)
+
+    # 表示
+    if verbose:
+        # ヘッダー
+        print(f"{msg('worktree_name'):<30} {msg('branch_name'):<25} {msg('created_at'):<20} {msg('last_commit'):<20} {msg('status_label')}")
+        print("-" * 110)
+
+        for wt in worktrees:
+            name = Path(wt['path']).name
+            branch = wt.get('branch', 'N/A')
+            created = wt.get('created').strftime('%Y-%m-%d %H:%M') if wt.get('created') else 'N/A'
+            last_commit = wt.get('last_commit').strftime('%Y-%m-%d %H:%M') if wt.get('last_commit') else 'N/A'
+            status = 'clean' if wt.get('is_clean') else 'modified'
+
+            print(f"{name:<30} {branch:<25} {created:<20} {last_commit:<20} {status}")
+    else:
+        # 通常表示（ソートのみ）
+        for wt in worktrees:
+            print(wt['path'])
 
 
 def cmd_remove(args: list[str]):
@@ -473,6 +653,220 @@ def cmd_remove(args: list[str]):
         sys.exit(1)
 
 
+def cmd_clean(args: list[str]):
+    """wt clean - Remove old/unused worktrees"""
+    base_dir = find_base_dir()
+    if not base_dir:
+        print(msg('error', msg('base_not_found')), file=sys.stderr)
+        sys.exit(1)
+
+    # オプションを解析
+    dry_run = '--dry-run' in args
+    clean_all = '--all' in args
+    days = None
+
+    for i, arg in enumerate(args):
+        if arg == '--days' and i + 1 < len(args):
+            try:
+                days = int(args[i + 1])
+            except ValueError:
+                print(msg('error', 'Invalid days value'), file=sys.stderr)
+                sys.exit(1)
+
+    # worktree 情報を取得
+    worktrees = get_worktree_info(base_dir)
+
+    # 削除対象を抽出（_baseは除外）
+    targets = []
+    now = datetime.now()
+
+    for wt in worktrees:
+        path = Path(wt['path'])
+
+        # _base は除外
+        if path.name == '_base':
+            continue
+
+        # clean状態のものだけが対象
+        if not wt.get('is_clean'):
+            continue
+
+        # 日数指定がある場合はチェック
+        if days is not None:
+            created = wt.get('created')
+            if created:
+                age_days = (now - created).days
+                if age_days < days:
+                    continue
+
+        targets.append(wt)
+
+    if not targets:
+        print(msg('no_clean_targets'))
+        return
+
+    # 削除対象を表示
+    for wt in targets:
+        path = Path(wt['path'])
+        created = wt.get('created').strftime('%Y-%m-%d %H:%M') if wt.get('created') else 'N/A'
+        print(msg('clean_target', path.name, created))
+
+    if dry_run:
+        print(f"\n(--dry-run mode, no changes made)")
+        return
+
+    # 確認
+    if not clean_all:
+        try:
+            response = input(msg('clean_confirm', len(targets)))
+            if response.lower() not in ['y', 'yes']:
+                print("Cancelled.")
+                return
+        except (EOFError, KeyboardInterrupt):
+            print("\nCancelled.")
+            return
+
+    # 削除実行
+    for wt in targets:
+        path = Path(wt['path'])
+        print(msg('removing_worktree', path.name))
+        result = run_command(
+            ["git", "worktree", "remove", str(path)],
+            cwd=base_dir,
+            check=False
+        )
+
+        if result.returncode == 0:
+            print(msg('completed_remove', path.name))
+        else:
+            if result.stderr:
+                print(result.stderr, file=sys.stderr)
+
+
+def cmd_alias(args: list[str]):
+    """wt alias - Manage worktree aliases"""
+    base_dir = find_base_dir()
+    if not base_dir:
+        print(msg('error', msg('base_not_found')), file=sys.stderr)
+        sys.exit(1)
+
+    parent_dir = base_dir.parent
+
+    # --list オプション
+    if '--list' in args or len(args) == 0:
+        # エイリアス一覧を表示（シンボリックリンクを探す）
+        aliases = []
+        for item in parent_dir.iterdir():
+            if item.is_symlink() and item.name != '_base':
+                target = item.resolve()
+                aliases.append((item.name, target.name))
+
+        if aliases:
+            for alias, target in sorted(aliases):
+                print(f"{alias} -> {target}")
+        else:
+            print("No aliases found.")
+        return
+
+    # --remove オプション
+    if '--remove' in args:
+        if len(args) < 2:
+            print(msg('usage_alias'), file=sys.stderr)
+            sys.exit(1)
+
+        alias_name = args[args.index('--remove') + 1]
+        alias_path = parent_dir / alias_name
+
+        if not alias_path.exists():
+            print(msg('error', msg('alias_not_found', alias_name)), file=sys.stderr)
+            sys.exit(1)
+
+        if not alias_path.is_symlink():
+            print(msg('error', f'{alias_name} is not an alias'), file=sys.stderr)
+            sys.exit(1)
+
+        alias_path.unlink()
+        print(msg('alias_removed', alias_name))
+        return
+
+    # --override オプションをチェック
+    override = '--override' in args
+    if override:
+        args.remove('--override')
+
+    # エイリアス作成
+    if len(args) < 2:
+        print(msg('usage_alias'), file=sys.stderr)
+        sys.exit(1)
+
+    alias_name = args[0]
+    worktree_name = args[1]
+
+    alias_path = parent_dir / alias_name
+    worktree_path = parent_dir / worktree_name
+
+    # worktree が存在するかチェック
+    if not worktree_path.exists():
+        print(msg('error', f'Worktree not found: {worktree_name}'), file=sys.stderr)
+        sys.exit(1)
+
+    # エイリアスがすでに存在するかチェック
+    if alias_path.exists():
+        if not override:
+            print(msg('error', msg('already_exists', alias_name)), file=sys.stderr)
+            print(msg('alias_exists_suggestion', alias_name, worktree_name), file=sys.stderr)
+            sys.exit(1)
+        # --override が指定されている場合は既存のエイリアスを削除
+        if alias_path.is_symlink():
+            alias_path.unlink()
+
+    # シンボリックリンクを作成
+    alias_path.symlink_to(worktree_path, target_is_directory=True)
+    print(msg('alias_created', alias_name, worktree_name))
+
+
+def cmd_status(args: list[str]):
+    """wt status - Show status of all worktrees"""
+    base_dir = find_base_dir()
+    if not base_dir:
+        print(msg('error', msg('base_not_found')), file=sys.stderr)
+        sys.exit(1)
+
+    # オプション
+    show_dirty_only = '--dirty' in args
+    short = '--short' in args
+
+    worktrees = get_worktree_info(base_dir)
+
+    for wt in worktrees:
+        path = Path(wt['path'])
+
+        # dirty only モードの場合、clean なものはスキップ
+        if show_dirty_only and wt.get('is_clean'):
+            continue
+
+        # git status を取得
+        result = run_command(
+            ["git", "status", "--short" if short else "--short"],
+            cwd=path,
+            check=False
+        )
+
+        status_output = result.stdout.strip()
+
+        # ヘッダー
+        print(f"\n{'='*60}")
+        print(f"Worktree: {path.name}")
+        print(f"Branch: {wt.get('branch', 'N/A')}")
+        print(f"Path: {path}")
+        print(f"{'='*60}")
+
+        if status_output:
+            print(status_output)
+        else:
+            print("(clean - no changes)")
+
+
 def cmd_passthrough(args: list[str]):
     """Passthrough other git worktree commands"""
     base_dir = find_base_dir()
@@ -496,13 +890,19 @@ def show_help():
         print("  wt <command> [options]")
         print()
         print("コマンド:")
-        print("  clone <repository_url>          - リポジトリをクローン")
-        print("  init                             - 既存リポジトリを WT_<repo>/_base/ に移動")
-        print("  add <作業名> [<base_branch>]    - worktree を追加（デフォルト: 新規ブランチ作成）")
-        print("  list                             - worktree 一覧を表示")
-        print("  rm <作業名>                      - worktree を削除")
-        print("  remove <作業名>                  - worktree を削除")
-        print("  <git-worktree-command>           - その他の git worktree コマンド")
+        print("  clone <repository_url>                   - リポジトリをクローン")
+        print("  init                                      - 既存リポジトリを WT_<repo>/_base/ に移動")
+        print("  add <作業名> [<base_branch>] [--alias <名前>] - worktree を追加（デフォルト: 新規ブランチ作成）")
+        print("  list [--verbose] [--sort age|name] - worktree 一覧を表示")
+        print("  rm <作業名>                         - worktree を削除")
+        print("  remove <作業名>                     - worktree を削除")
+        print("  clean [--dry-run] [--days N]       - 未使用の worktree を削除")
+        print("  alias <名前> <worktree>            - worktree のエイリアスを作成")
+        print("  alias --override <名前> <worktree> - エイリアスを上書き")
+        print("  alias --list                        - エイリアス一覧を表示")
+        print("  alias --remove <名前>              - エイリアスを削除")
+        print("  status [--dirty] [--short]         - 全 worktree の状態を表示")
+        print("  <git-worktree-command>             - その他の git worktree コマンド")
         print()
         print("オプション:")
         print("  -h, --help     - このヘルプメッセージを表示")
@@ -514,13 +914,19 @@ def show_help():
         print("  wt <command> [options]")
         print()
         print("Commands:")
-        print("  clone <repository_url>            - Clone a repository")
-        print("  init                               - Move existing repo to WT_<repo>/_base/")
-        print("  add <work_name> [<base_branch>]   - Add a worktree (default: create new branch)")
-        print("  list                               - List worktrees")
-        print("  rm <work_name>                     - Remove a worktree")
-        print("  remove <work_name>                 - Remove a worktree")
-        print("  <git-worktree-command>             - Other git worktree commands")
+        print("  clone <repository_url>                       - Clone a repository")
+        print("  init                                          - Move existing repo to WT_<repo>/_base/")
+        print("  add <work_name> [<base_branch>] [--alias <name>] - Add a worktree (default: create new branch)")
+        print("  list [--verbose] [--sort age|name]  - List worktrees")
+        print("  rm <work_name>                       - Remove a worktree")
+        print("  remove <work_name>                   - Remove a worktree")
+        print("  clean [--dry-run] [--days N]        - Remove unused worktrees")
+        print("  alias <name> <worktree>             - Create an alias for a worktree")
+        print("  alias --override <name> <worktree>  - Override an existing alias")
+        print("  alias --list                         - List aliases")
+        print("  alias --remove <name>               - Remove an alias")
+        print("  status [--dirty] [--short]          - Show status of all worktrees")
+        print("  <git-worktree-command>              - Other git worktree commands")
         print()
         print("Options:")
         print("  -h, --help     - Show this help message")
@@ -529,7 +935,7 @@ def show_help():
 
 def show_version():
     """Show version information"""
-    print("easy-worktree version 0.0.1")
+    print("easy-worktree version 0.0.3")
 
 
 def main():
@@ -562,6 +968,12 @@ def main():
         cmd_list(args)
     elif command in ["rm", "remove"]:
         cmd_remove(args)
+    elif command == "clean":
+        cmd_clean(args)
+    elif command == "alias":
+        cmd_alias(args)
+    elif command == "status":
+        cmd_status(args)
     else:
         # その他のコマンドは git worktree にパススルー
         cmd_passthrough([command] + args)

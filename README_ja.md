@@ -71,6 +71,12 @@ WT_repo/
 wt add feature-1 main
 ```
 
+worktree 作成と同時にエイリアスを設定：
+
+```bash
+wt add feature-123 --alias current    # feature-123 を作成して current エイリアスを設定
+```
+
 ### worktree 一覧を表示
 
 ```bash
@@ -131,6 +137,46 @@ chmod +x WT_repo/_base/.wt/post-add
 - `WT_ACTION`: アクション名（`add`）
 
 Hook は新しく作成された worktree ディレクトリ内で実行されます。
+
+### worktree 一覧を詳細表示
+
+```bash
+wt list --verbose           # 作成日時、最終コミット、状態を表示
+wt list --sort age          # 作成日時順にソート
+wt list --sort name         # 名前順にソート
+```
+
+### 未使用の worktree をクリーンアップ
+
+変更がない（clean状態の）worktree を一括削除できます。
+
+```bash
+wt clean --dry-run          # 削除対象を確認（実際には削除しない）
+wt clean --days 30          # 30日以上前に作成された clean worktree を削除
+wt clean --all              # すべての clean worktree を削除（確認なし）
+```
+
+### worktree のエイリアスを作成
+
+よく使う worktree にシンボリックリンクでショートカットを作成できます。
+
+```bash
+wt alias current feature-123           # current という名前でエイリアス作成
+wt alias dev feature-xyz               # dev という名前でエイリアス作成
+wt alias --override current hoge3      # 既存のエイリアスを上書き
+wt alias --list                        # エイリアス一覧を表示
+wt alias --remove current              # エイリアスを削除
+```
+
+### 全 worktree の状態を確認
+
+すべての worktree の git status を一度に確認できます。
+
+```bash
+wt status                   # 全 worktree の状態を表示
+wt status --dirty           # 変更がある worktree のみ表示
+wt status --short           # 簡潔な表示
+```
 
 ### その他の git worktree コマンド
 
