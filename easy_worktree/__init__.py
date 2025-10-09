@@ -229,21 +229,51 @@ def cmd_passthrough(args: list[str]):
     sys.exit(result.returncode)
 
 
+def show_help():
+    """ヘルプメッセージを表示"""
+    print("easy-worktree - Git worktree を簡単に管理するための CLI ツール")
+    print()
+    print("使用方法:")
+    print("  wt <command> [options]")
+    print()
+    print("コマンド:")
+    print("  clone <repository_url>  - リポジトリをクローン")
+    print("  init                     - 既存リポジトリを WT_<repo>/_base/ に移動")
+    print("  add <作業名> [<branch>] - worktree を追加")
+    print("  list                     - worktree 一覧を表示")
+    print("  rm <作業名>              - worktree を削除")
+    print("  remove <作業名>          - worktree を削除")
+    print("  <git-worktree-command>   - その他の git worktree コマンド")
+    print()
+    print("オプション:")
+    print("  -h, --help     - このヘルプメッセージを表示")
+    print("  -v, --version  - バージョン情報を表示")
+
+
+def show_version():
+    """バージョン情報を表示"""
+    print("easy-worktree version 0.0.1")
+
+
 def main():
     """メインエントリポイント"""
+    # ヘルプとバージョンのオプションは _base/ なしでも動作する
     if len(sys.argv) < 2:
-        print("使用方法:")
-        print("  wt clone <repository_url>  - リポジトリをクローン")
-        print("  wt init                     - 既存リポジトリを WT_<repo>/_base/ に移動")
-        print("  wt add <作業名> [<branch>] - worktree を追加")
-        print("  wt list                     - worktree 一覧を表示")
-        print("  wt rm <作業名>              - worktree を削除")
-        print("  wt remove <作業名>          - worktree を削除")
-        print("  wt <git-worktree-command>   - その他の git worktree コマンド")
+        show_help()
         sys.exit(1)
 
     command = sys.argv[1]
     args = sys.argv[2:]
+
+    # -h, --help オプション
+    if command in ["-h", "--help"]:
+        show_help()
+        sys.exit(0)
+
+    # -v, --version オプション
+    if command in ["-v", "--version"]:
+        show_version()
+        sys.exit(0)
 
     if command == "clone":
         cmd_clone(args)
