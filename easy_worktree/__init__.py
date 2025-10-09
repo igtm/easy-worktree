@@ -156,6 +156,54 @@ def get_repository_name(url: str) -> str:
     return Path(url).name
 
 
+def create_hook_template(base_dir: Path):
+    """post-add hook のテンプレートを作成"""
+    wt_dir = base_dir / ".wt"
+    hook_file = wt_dir / "post-add"
+
+    # 既に存在する場合は何もしない
+    if hook_file.exists():
+        return
+
+    # .wt ディレクトリを作成
+    wt_dir.mkdir(exist_ok=True)
+
+    # テンプレートを作成
+    template = """#!/bin/bash
+# Post-add hook for easy-worktree
+# This script is automatically executed after creating a new worktree
+#
+# Available environment variables:
+#   WT_WORKTREE_PATH  - Path to the created worktree
+#   WT_WORKTREE_NAME  - Name of the worktree
+#   WT_BASE_DIR       - Path to the _base/ directory
+#   WT_BRANCH         - Branch name
+#   WT_ACTION         - Action name (add)
+#
+# Example: Install dependencies and copy configuration files
+#
+# set -e
+#
+# echo "Initializing worktree: $WT_WORKTREE_NAME"
+#
+# # Install npm packages
+# if [ -f package.json ]; then
+#     npm install
+# fi
+#
+# # Copy .env file
+# if [ -f "$WT_BASE_DIR/.env.example" ]; then
+#     cp "$WT_BASE_DIR/.env.example" .env
+# fi
+#
+# echo "Setup completed!"
+"""
+
+    hook_file.write_text(template)
+    # 実行権限を付与
+    hook_file.chmod(0o755)
+
+
 def find_base_dir() -> Path | None:
     """現在のディレクトリまたは親ディレクトリから _base/ を探す"""
     current = Path.cwd()
@@ -195,6 +243,9 @@ def cmd_clone(args: list[str]):
     print(msg('cloning', repo_url, base_dir))
     run_command(["git", "clone", repo_url, str(base_dir)])
     print(msg('completed_clone', base_dir))
+
+    # post-add hook テンプレートを作成
+    create_hook_template(base_dir)
 
 
 def cmd_init(args: list[str]):
@@ -252,6 +303,9 @@ def cmd_init(args: list[str]):
 
     print(msg('completed_move', new_base_dir))
     print(msg('use_wt_from', wt_parent_dir))
+
+    # post-add hook テンプレートを作成
+    create_hook_template(new_base_dir)
 
 
 def run_post_add_hook(worktree_path: Path, work_name: str, base_dir: Path, branch: str = None):
