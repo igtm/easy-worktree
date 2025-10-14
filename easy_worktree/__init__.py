@@ -532,16 +532,26 @@ def cmd_add(args: list[str]):
         # エイリアスを作成
         if alias_name:
             alias_path = base_dir.parent / alias_name
-            if alias_path.exists():
-                # 既存のエイリアスを削除して上書き
-                if alias_path.is_symlink():
-                    alias_path.unlink()
-                    alias_path.symlink_to(worktree_path, target_is_directory=True)
-                    print(msg('alias_updated', alias_name, work_name))
-                else:
-                    print(msg('error', f'{alias_name} exists but is not a symlink'), file=sys.stderr)
+
+            # 既存かどうかをチェック
+            is_updating = alias_path.is_symlink()
+
+            # 既存のシンボリックリンクを削除
+            if alias_path.is_symlink():
+                alias_path.unlink()
+            elif alias_path.exists():
+                # シンボリックリンクではないファイル/ディレクトリが存在
+                print(msg('error', f'{alias_name} exists but is not a symlink'), file=sys.stderr)
+                # post-add hook を実行
+                run_post_add_hook(worktree_path, work_name, base_dir, branch_name)
+                sys.exit(0)  # worktree は作成できたので正常終了
+
+            # シンボリックリンクを作成
+            alias_path.symlink_to(worktree_path, target_is_directory=True)
+
+            if is_updating:
+                print(msg('alias_updated', alias_name, work_name))
             else:
-                alias_path.symlink_to(worktree_path, target_is_directory=True)
                 print(msg('alias_created', alias_name, work_name))
 
         # post-add hook を実行
@@ -714,6 +724,14 @@ def cmd_clean(args: list[str]):
     # worktree 情報を取得
     worktrees = get_worktree_info(base_dir)
 
+    # エイリアスで使われている worktree を取得
+    parent_dir = base_dir.parent
+    aliased_worktrees = set()
+    for item in parent_dir.iterdir():
+        if item.is_symlink() and item.name != '_base':
+            target = item.resolve()
+            aliased_worktrees.add(target)
+
     # 削除対象を抽出（_baseは除外）
     targets = []
     now = datetime.now()
@@ -723,6 +741,10 @@ def cmd_clean(args: list[str]):
 
         # _base は除外
         if path.name == '_base':
+            continue
+
+        # エイリアスで使われている worktree は除外
+        if path in aliased_worktrees:
             continue
 
         # clean状態のものだけが対象
@@ -966,7 +988,7 @@ def show_help():
 
 def show_version():
     """Show version information"""
-    print("easy-worktree version 0.0.4")
+    print("easy-worktree version 0.0.5")
 
 
 def main():
