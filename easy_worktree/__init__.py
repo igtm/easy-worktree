@@ -215,19 +215,16 @@ def get_repository_name(url: str) -> str:
 
 
 def create_hook_template(base_dir: Path):
-    """post-add hook のテンプレートを作成"""
+    """post-add hook のテンプレートと .wt/ 内のファイルを作成"""
     wt_dir = base_dir / ".wt"
-    hook_file = wt_dir / "post-add"
-
-    # 既に存在する場合は何もしない
-    if hook_file.exists():
-        return
 
     # .wt ディレクトリを作成
     wt_dir.mkdir(exist_ok=True)
 
-    # テンプレートを作成
-    template = """#!/bin/bash
+    # post-add hook テンプレート
+    hook_file = wt_dir / "post-add"
+    if not hook_file.exists():
+        template = """#!/bin/bash
 # Post-add hook for easy-worktree
 # This script is automatically executed after creating a new worktree
 #
@@ -256,10 +253,186 @@ def create_hook_template(base_dir: Path):
 #
 # echo "Setup completed!"
 """
+        hook_file.write_text(template)
+        # 実行権限を付与
+        hook_file.chmod(0o755)
 
-    hook_file.write_text(template)
-    # 実行権限を付与
-    hook_file.chmod(0o755)
+    # .gitignore
+    gitignore_file = wt_dir / ".gitignore"
+    if not gitignore_file.exists():
+        gitignore_content = "post-add.local\n"
+        gitignore_file.write_text(gitignore_content)
+
+    # README.md (言語に応じて)
+    readme_file = wt_dir / "README.md"
+    if not readme_file.exists():
+        if is_japanese():
+            readme_content = """# easy-worktree フック
+
+このディレクトリには、easy-worktree (wt コマンド) のフックスクリプトが格納されています。
+
+## wt コマンドとは
+
+`wt` は Git worktree を簡単に管理するための CLI ツールです。複数のブランチで同時に作業する際に、ブランチごとに独立したディレクトリ（worktree）を作成・管理できます。
+
+### 基本的な使い方
+
+```bash
+# リポジトリをクローン
+wt clone <repository_url>
+
+# 新しい worktree を作成（新規ブランチ）
+wt add <作業名>
+
+# 既存ブランチから worktree を作成
+wt add <作業名> <既存ブランチ名>
+
+# エイリアスを作成（current エイリアスで現在の作業を切り替え）
+wt add <作業名> --alias current
+
+# worktree 一覧を表示
+wt list
+
+# worktree を削除
+wt rm <作業名>
+```
+
+詳細は https://github.com/igtm/easy-worktree を参照してください。
+
+## エイリアスとは
+
+エイリアスは、worktree へのシンボリックリンク（symbolic link）です。同じエイリアス名で異なる worktree を指すことで、固定されたパスで複数のブランチを切り替えられます。
+
+### エイリアスの便利な使い方
+
+**VSCode ワークスペースでの活用**
+
+`current` などの固定エイリアスを VSCode のワークスペースとして開くことで、worktree を切り替えても VSCode を開き直す必要がなくなります。
+
+```bash
+# 最初の作業
+wt add feature-a --alias current
+code current  # VSCode で current を開く
+
+# 別の作業に切り替え（VSCode は開いたまま）
+wt add feature-b --alias current
+# current エイリアスが feature-b を指すようになる
+```
+
+このように、エイリアスを使うことで：
+- VSCode のワークスペース設定が維持される
+- 拡張機能の設定やウィンドウレイアウトが保持される
+- ブランチ切り替えのたびにエディタを開き直す手間が不要
+
+## post-add フック
+
+`post-add` フックは、worktree 作成後に自動実行されるスクリプトです。
+
+### 使用例
+
+- 依存関係のインストール（npm install, pip install など）
+- 設定ファイルのコピー（.env ファイルなど）
+- ディレクトリの初期化
+- VSCode ワークスペースの作成
+
+### 利用可能な環境変数
+
+- `WT_WORKTREE_PATH`: 作成された worktree のパス
+- `WT_WORKTREE_NAME`: worktree の名前
+- `WT_BASE_DIR`: _base/ ディレクトリのパス
+- `WT_BRANCH`: ブランチ名
+- `WT_ACTION`: アクション名（常に "add"）
+
+### post-add.local について
+
+`post-add.local` は、個人用のローカルフックです。このファイルは `.gitignore` に含まれているため、リポジトリにコミットされません。チーム全体で共有したいフックは `post-add` に、個人的な設定は `post-add.local` に記述してください。
+
+`post-add` が存在する場合のみ、`post-add.local` も自動的に実行されます。
+"""
+        else:
+            readme_content = """# easy-worktree Hooks
+
+This directory contains hook scripts for easy-worktree (wt command).
+
+## What is wt command?
+
+`wt` is a CLI tool for easily managing Git worktrees. When working on multiple branches simultaneously, you can create and manage independent directories (worktrees) for each branch.
+
+### Basic Usage
+
+```bash
+# Clone a repository
+wt clone <repository_url>
+
+# Create a new worktree (new branch)
+wt add <work_name>
+
+# Create a worktree from an existing branch
+wt add <work_name> <existing_branch_name>
+
+# Create an alias (use "current" alias to switch between tasks)
+wt add <work_name> --alias current
+
+# List worktrees
+wt list
+
+# Remove a worktree
+wt rm <work_name>
+```
+
+For more details, see https://github.com/igtm/easy-worktree
+
+## What are Aliases?
+
+Aliases are symbolic links to worktrees. By pointing the same alias name to different worktrees, you can switch between multiple branches using a fixed path.
+
+### Smart Use of Aliases
+
+**Using with VSCode Workspace**
+
+By opening a fixed alias like `current` as a VSCode workspace, you can switch worktrees without needing to reopen VSCode.
+
+```bash
+# First task
+wt add feature-a --alias current
+code current  # Open current in VSCode
+
+# Switch to another task (VSCode stays open)
+wt add feature-b --alias current
+# The current alias now points to feature-b
+```
+
+Benefits of using aliases:
+- VSCode workspace settings are preserved
+- Extension settings and window layouts are maintained
+- No need to reopen the editor when switching branches
+
+## post-add Hook
+
+The `post-add` hook is a script that runs automatically after creating a worktree.
+
+### Use Cases
+
+- Install dependencies (npm install, pip install, etc.)
+- Copy configuration files (.env files, etc.)
+- Initialize directories
+- Create VSCode workspaces
+
+### Available Environment Variables
+
+- `WT_WORKTREE_PATH`: Path to the created worktree
+- `WT_WORKTREE_NAME`: Name of the worktree
+- `WT_BASE_DIR`: Path to the _base/ directory
+- `WT_BRANCH`: Branch name
+- `WT_ACTION`: Action name (always "add")
+
+### About post-add.local
+
+`post-add.local` is for personal local hooks. This file is included in `.gitignore`, so it won't be committed to the repository. Use `post-add` for hooks you want to share with the team, and `post-add.local` for your personal settings.
+
+`post-add.local` is automatically executed only when `post-add` exists.
+"""
+        readme_file.write_text(readme_content)
 
 
 def find_base_dir() -> Path | None:
@@ -440,6 +613,24 @@ def cmd_add(args: list[str]):
     # ブランチを最新に更新
     print(msg('fetching'))
     run_command(["git", "fetch", "--all"], cwd=base_dir)
+
+    # _base/ を base branch の最新に更新
+    # 現在のブランチを取得
+    result = run_command(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=base_dir,
+        check=False
+    )
+    if result.returncode == 0:
+        current_branch = result.stdout.strip()
+        # リモートブランチが存在する場合は pull
+        result = run_command(
+            ["git", "rev-parse", "--verify", f"origin/{current_branch}"],
+            cwd=base_dir,
+            check=False
+        )
+        if result.returncode == 0:
+            run_command(["git", "pull", "origin", current_branch], cwd=base_dir, check=False)
 
     # ブランチ名が指定されている場合は既存ブランチをチェックアウト
     # 指定されていない場合は新しいブランチを作成
@@ -988,7 +1179,7 @@ def show_help():
 
 def show_version():
     """Show version information"""
-    print("easy-worktree version 0.0.5")
+    print("easy-worktree version 0.0.7")
 
 
 def main():
