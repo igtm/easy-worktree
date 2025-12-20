@@ -1,16 +1,28 @@
+![hero](hero.png)
+
 # easy-worktree
 
 Git worktree を簡単に管理するための CLI ツール
 
 ## 概要
 
-`easy-worktree` は git worktree の面倒な部分を慣習で決めることで、考えることを少なくするツールです。
+`easy-worktree` は git worktree の管理をシンプルにするためのツールです。
+リポジトリのルートディレクトリをそのままメインの作業場所（main）として使いつつ、他のブランチでの作業が必要な場合はサブディレクトリ（デフォルトでは `.worktrees/`）に worktree を作成して管理します。
 
 ### 主な特徴
 
-- **決まったディレクトリ構成**: `WT_<repository_name>/` の中に `_base/` ディレクトリを作り、これがリポジトリの本体となります
-- **簡単な worktree 管理**: `_base/` から worktree を作成・削除
-- **自動的なブランチ更新**: worktree 作成時に `git fetch --all` を自動実行
+- **整理されたディレクトリ構成**: worktree は `.worktrees/` ディレクトリ（設定で変更可能）の下に作成されます。ルートディレクトリが散らかりません。
+- **自動同期**: `.env` などの git 管理外ファイルを、ルートから各 worktree へ自動的にコピー・同期できます。
+- **わかりやすい一覧表示**: `wt list` で worktree の一覧、ブランチ、状態（clean/dirty）、GitHub PR 情報を美しく表示します。
+- **スマートなクリーンアップ**: マージ済みのブランチや古い worktree を簡単に削除できるようになります。
+- **2文字ショートカット**: `ad`, `ls`, `st`, `sy`, `cl` といった短いコマンドで素早く操作できます。
+
+## 前提条件
+
+`easy-worktree` には以下が必要です：
+
+- **Git**: 2.34 以上を推奨します。
+- **GitHub CLI (gh)**: PR 関連機能（`wt list --pr`, `wt pr add`, `wt clean --merged`）を利用する場合に必要です。[インストール方法](https://cli.github.com/)。
 
 ## インストール
 
@@ -28,187 +40,116 @@ pip install -e .
 
 ## 使い方
 
-### 新しいリポジトリをクローン
+### リポジトリの準備
+
+#### 新しくクローンする場合
 
 ```bash
 wt clone https://github.com/user/repo.git
 ```
 
-これにより以下の構成が作成されます：
+リポジトリをクローンし、`easy-worktree` 用の初期設定を自動で行います。
 
-```
-WT_repo/
-  _base/  # リポジトリの本体（基本的にいじらない）
-```
-
-### 既存のリポジトリを easy-worktree 構成に変換
+#### 既存のリポジトリで使い始める場合
 
 ```bash
 cd my-repo/
 wt init
 ```
 
-現在のディレクトリが `../WT_my-repo/_base/` に移動されます。
+現在のディレクトリをメインリポジトリ（ルート）として `easy-worktree` を初期化します。既存のリポジトリ構成はそのまま維持されます。
 
-### worktree を追加
+### worktree の操作
+
+#### worktree を追加 (ショートカット: `ad`)
 
 ```bash
-cd WT_repo/
 wt add feature-1
 ```
 
-これにより以下の構成になります：
+これにより、以下のディレクトリ構成が作成されます：
 
 ```
-WT_repo/
-  _base/
-  feature-1/  # 作業用 worktree
+my-repo/ (main)
+  .worktrees/
+    feature-1/  # ここが新しい worktree
+  .wt/
+  ...
 ```
 
-ブランチ名を指定することもできます：
+既存のブランチを指定して作成することもできます：
 
 ```bash
 wt add feature-1 main
 ```
 
-worktree 作成と同時にエイリアスを設定：
-
-```bash
-wt add feature-123 --alias current    # feature-123 を作成して current エイリアスを設定
-```
-
-### worktree 一覧を表示
+#### 一覧を表示 (ショートカット: `ls`)
 
 ```bash
 wt list
+wt ls --pr   # GitHub の PR 情報もあわせて表示
 ```
 
-### worktree を削除
+
+#### スタッシュと移動 (ショートカット: `st`)
+
+現在の変更をスタッシュし、そのまま新しい worktree を作成して移動します。
+
+```bash
+wt stash feature-2
+```
+
+#### PR 管理
+
+GitHub の PR を取得して worktree を作成します（`gh` CLI が必要です）。
+
+```bash
+wt pr add 123    # PR #123 を取得し 'pr@123' という名前で worktree を作成
+```
+
+#### 削除
 
 ```bash
 wt rm feature-1
-# または
-wt remove feature-1
 ```
 
-### 初期化 hook（post-add）
+ディレクトリごと worktree を削除します。
 
-worktree 作成後に自動的に実行されるスクリプトを設定できます。
+### 便利な機能
 
-**Hook の配置場所**: `_base/.wt/post-add`
+#### 設定ファイルの同期 (ショートカット: `sy`)
 
-**自動作成**: `wt clone` または `wt init` を実行すると、テンプレートファイルが自動的に `_base/.wt/post-add` に作成されます（既に存在する場合は上書きしません）。このファイルを編集して、プロジェクト固有の初期化処理を記述してください。
+`.env` ファイルなどの git 管理外ファイルを、ルートから worktree に手動で同期します。
 
 ```bash
-# Hook スクリプトの編集例
-vim WT_repo/_base/.wt/post-add
+wt sync .env
 ```
+
+
+#### クリーンアップ (ショートカット: `cl`)
 
 ```bash
-#!/bin/bash
-set -e
-
-echo "Initializing worktree: $WT_WORKTREE_NAME"
-
-# npm パッケージのインストール
-if [ -f package.json ]; then
-    npm install
-fi
-
-# .env ファイルのコピー
-if [ -f "$WT_BASE_DIR/.env.example" ]; then
-    cp "$WT_BASE_DIR/.env.example" .env
-fi
-
-echo "Setup completed!"
+wt clean --merged
+wt clean --closed  # クローズされた (未マージ) PRのworktreeを削除
+wt clean --days 30
 ```
 
-実行権限を忘れずに：
 
-```bash
-chmod +x WT_repo/_base/.wt/post-add
+### 設定
+
+`.wt/config.toml` で挙動をカスタマイズできます：
+
+```toml
+worktrees_dir = ".worktrees"   # worktree を作成するディレクトリ名
+sync_files = [".env"]          # 自動同期するファイル一覧
+auto_copy_on_add = true        # wt add 時にファイルを自動コピーするか
 ```
 
-**利用可能な環境変数**:
-- `WT_WORKTREE_PATH`: 作成された worktree のパス
-- `WT_WORKTREE_NAME`: worktree の名前
-- `WT_BASE_DIR`: `_base/` ディレクトリのパス
-- `WT_BRANCH`: ブランチ名
-- `WT_ACTION`: アクション名（`add`）
+## Hook
 
-Hook は新しく作成された worktree ディレクトリ内で実行されます。
-
-### worktree 一覧を詳細表示
-
-```bash
-wt list --verbose           # 作成日時、最終コミット、状態を表示
-wt list --sort age          # 作成日時順にソート
-wt list --sort name         # 名前順にソート
-```
-
-### 未使用の worktree をクリーンアップ
-
-変更がない（clean状態の）worktree を一括削除できます。
-
-```bash
-wt clean --dry-run          # 削除対象を確認（実際には削除しない）
-wt clean --days 30          # 30日以上前に作成された clean worktree を削除
-wt clean --all              # すべての clean worktree を削除（確認なし）
-```
-
-### worktree のエイリアスを作成
-
-よく使う worktree にシンボリックリンクでショートカットを作成できます。
-
-```bash
-wt alias current feature-123    # current という名前でエイリアス作成
-wt alias dev feature-xyz        # dev という名前でエイリアス作成
-wt alias current hoge3          # 既存のエイリアスを自動的に上書き
-wt alias --list                 # エイリアス一覧を表示
-wt alias --remove current       # エイリアスを削除
-```
-
-### 全 worktree の状態を確認
-
-すべての worktree の git status を一度に確認できます。
-
-```bash
-wt status                   # 全 worktree の状態を表示
-wt status --dirty           # 変更がある worktree のみ表示
-wt status --short           # 簡潔な表示
-```
-
-### その他の git worktree コマンド
-
-`wt` は他の git worktree コマンドもサポートしています：
-
-```bash
-wt prune
-wt lock <worktree>
-wt unlock <worktree>
-```
-
-## ディレクトリ構成
-
-```
-WT_<repository_name>/     # プロジェクトのルートディレクトリ
-  _base/                   # git リポジトリの本体
-  feature-1/               # worktree 1
-  bugfix-123/              # worktree 2
-  ...
-```
-
-`WT_<repository_name>/` または worktree ディレクトリ内から `wt` コマンドを実行できます。
-
-## 必要要件
-
-- Python >= 3.11
-- Git
+`wt add` の後に自動実行されるスクリプトを記述できます。
+テンプレートが `.wt/post-add` に作成されます。
 
 ## ライセンス
 
 MIT License
-
-## 貢献
-
-Issue や Pull Request を歓迎します！
