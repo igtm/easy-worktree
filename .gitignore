@@ -11,3 +11,5 @@ wheels/
 
 # Worktree directories
 WT_*/
+.pytest_cache
+tmp/*

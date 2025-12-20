@@ -1,18 +1,30 @@
+![hero](hero.png)
+
 # easy-worktree
 
-A CLI tool for easy Git worktree management
+A CLI tool for easy Git worktree management.
 
 [日本語版 README](README_ja.md)
 
 ## Overview
 
-`easy-worktree` simplifies git worktree management by establishing conventions, reducing the cognitive load of managing multiple working trees.
+`easy-worktree` simplifies git worktree management.
+It keeps the root of your git repository as your primary working area (main), while managing other worktrees in a subdirectory (default: `.worktrees/`).
 
 ### Key Features
 
-- **Standardized directory structure**: Creates a `_base/` directory within `WT_<repository_name>/` as the main repository
-- **Easy worktree management**: Create and remove worktrees from `_base/`
-- **Automatic branch updates**: Runs `git fetch --all` automatically when creating worktrees
+- **Standardized directory structure**: Worktrees are created in a `.worktrees/` subdirectory (configurable). Keeps your root directory clean.
+- **Auto Sync**: Automatically sync files ignored by git (like `.env`) from the root to each worktree.
+- **Clear Status**: `wt list` shows worktree branches, their status (clean/dirty), and associated GitHub PRs in a beautiful table.
+- **Smart Cleanup**: Easily batch remove merged branches or old unused worktrees.
+- **Two-letter shortcuts**: Fast execution with shortcuts like `ad`, `ls`, `st`, `sy`, `cl`.
+
+## Prerequisites
+
+`easy-worktree` requires the following:
+
+- **Git**: 2.34 or higher recommended.
+- **GitHub CLI (gh)**: Required for PR features (`wt list --pr`, `wt pr add`, `wt clean --merged`). [Installation guide](https://cli.github.com/).
 
 ## Installation
 
@@ -30,187 +42,117 @@ pip install -e .
 
 ## Usage
 
-### Clone a new repository
+### Getting Started
+
+#### Clone a new repository
 
 ```bash
 wt clone https://github.com/user/repo.git
 ```
 
-This creates the following structure:
+This clones the repository and initializes `easy-worktree` configuration.
 
-```
-WT_repo/
-  _base/  # Main repository (typically don't modify directly)
-```
-
-### Convert an existing repository to easy-worktree structure
+#### Initialize an existing repository
 
 ```bash
 cd my-repo/
 wt init
 ```
 
-The current directory will be moved to `../WT_my-repo/_base/`.
+Initializes `easy-worktree` in the current repository. Your main repository stays at the project root.
 
-### Add a worktree
+### Managing Worktrees
+
+#### Add a worktree (shortcut: `ad`)
 
 ```bash
-cd WT_repo/
 wt add feature-1
 ```
 
 This creates the following structure:
 
 ```
-WT_repo/
-  _base/
-  feature-1/  # Working worktree
+my-repo/ (main)
+  .worktrees/
+    feature-1/  # Your new worktree
+  .wt/
+  ...
 ```
 
-You can also specify a branch name:
+You can also specify a base branch:
 
 ```bash
 wt add feature-1 main
 ```
 
-Create a worktree and set an alias at the same time:
-
-```bash
-wt add feature-123 --alias current    # Create feature-123 and set 'current' alias
-```
-
-### List worktrees
+#### List worktrees
 
 ```bash
 wt list
+wt list --pr  # Show PR information
 ```
 
-### Remove a worktree
+
+#### Stash and Move (shortcut: `st`)
+
+Quickly stash your current changes and move them to a new worktree.
+
+```bash
+wt stash feature-2
+```
+
+#### PR Management
+
+Fetch a PR and create a worktree for it. (Requires `gh` CLI)
+
+```bash
+wt pr add 123    # Fetches PR #123 and creates 'pr@123' worktree
+```
+
+#### Remove a worktree
 
 ```bash
 wt rm feature-1
-# or
-wt remove feature-1
 ```
 
-### Initialization hook (post-add)
+Removes the worktree and its directory.
 
-You can set up a script to run automatically after creating a worktree.
+### Useful Features
 
-**Hook location**: `_base/.wt/post-add`
+#### Sync configuration files (shortcut: `sy`)
 
-**Automatic creation**: When you run `wt clone` or `wt init`, a template file is automatically created at `_base/.wt/post-add` (won't overwrite if it already exists). Edit this file to describe your project-specific initialization process.
+Sync files like `.env` that are not in git from the root to your worktrees.
 
 ```bash
-# Example: editing the hook script
-vim WT_repo/_base/.wt/post-add
+wt sync .env
 ```
+
+
+#### Cleanup (shortcut: `cl`)
 
 ```bash
-#!/bin/bash
-set -e
-
-echo "Initializing worktree: $WT_WORKTREE_NAME"
-
-# Install npm packages
-if [ -f package.json ]; then
-    npm install
-fi
-
-# Copy .env file
-if [ -f "$WT_BASE_DIR/.env.example" ]; then
-    cp "$WT_BASE_DIR/.env.example" .env
-fi
-
-echo "Setup completed!"
+wt clean --merged
+wt clean --closed  # Remove worktrees for closed (unmerged) PRs
+wt clean --days 30
 ```
 
-Don't forget to make it executable:
 
-```bash
-chmod +x WT_repo/_base/.wt/post-add
+
+### Configuration
+
+Customize behavior in `.wt/config.toml`:
+
+```toml
+worktrees_dir = ".worktrees"   # Directory where worktrees are created
+sync_files = [".env"]          # Files to auto-sync
+auto_copy_on_add = true         # Enable auto-sync on add
 ```
 
-**Available environment variables**:
-- `WT_WORKTREE_PATH`: Path to the created worktree
-- `WT_WORKTREE_NAME`: Name of the worktree
-- `WT_BASE_DIR`: Path to the `_base/` directory
-- `WT_BRANCH`: Branch name
-- `WT_ACTION`: Action name (`add`)
+## Hooks
 
-The hook runs within the newly created worktree directory.
-
-### List worktrees with details
-
-```bash
-wt list --verbose           # Show creation time, last commit, status
-wt list --sort age          # Sort by creation time
-wt list --sort name         # Sort by name
-```
-
-### Clean up unused worktrees
-
-Remove clean (no changes) worktrees in batch.
-
-```bash
-wt clean --dry-run          # Preview what will be removed
-wt clean --days 30          # Remove clean worktrees older than 30 days
-wt clean --all              # Remove all clean worktrees without confirmation
-```
-
-### Create worktree aliases
-
-Create symbolic link shortcuts to frequently used worktrees.
-
-```bash
-wt alias current feature-123    # Create alias named 'current'
-wt alias dev feature-xyz        # Create alias named 'dev'
-wt alias current hoge3          # Automatically override existing alias
-wt alias --list                 # List all aliases
-wt alias --remove current       # Remove an alias
-```
-
-### Check status of all worktrees
-
-View git status of all worktrees at once.
-
-```bash
-wt status                   # Show status of all worktrees
-wt status --dirty           # Show only worktrees with changes
-wt status --short           # Concise display
-```
-
-### Other git worktree commands
-
-`wt` also supports other git worktree commands:
-
-```bash
-wt prune
-wt lock <worktree>
-wt unlock <worktree>
-```
-
-## Directory Structure
-
-```
-WT_<repository_name>/     # Project root directory
-  _base/                   # Main git repository
-  feature-1/               # Worktree 1
-  bugfix-123/              # Worktree 2
-  ...
-```
-
-You can run `wt` commands from `WT_<repository_name>/` or from within any worktree directory.
-
-## Requirements
-
-- Python >= 3.11
-- Git
+You can define scripts to run automatically after `wt add`.
+Templates are created in `.wt/post-add` upon initialization.
 
 ## License
 
 MIT License
-
-## Contributing
-
-Issues and Pull Requests are welcome!
