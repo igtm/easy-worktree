@@ -2,6 +2,7 @@
 """
 Git worktree を簡単に管理するための CLI ツール
 """
+
 import os
 import subprocess
 import shutil
@@ -15,233 +16,180 @@ import toml
 # 言語判定
 def is_japanese() -> bool:
     """LANG環境変数から日本語かどうかを判定"""
-    lang = os.environ.get('LANG', '')
-    return 'ja' in lang.lower()
+    lang = os.environ.get("LANG", "")
+    return "ja" in lang.lower()
 
 
 # メッセージ辞書
 MESSAGES = {
-    'error': {
-        'en': 'Error: {}',
-        'ja': 'エラー: {}'
+    "error": {"en": "Error: {}", "ja": "エラー: {}"},
+    "usage": {
+        "en": "Usage: wt clone <repository_url>",
+        "ja": "使用方法: wt clone <repository_url>",
     },
-    'usage': {
-        'en': 'Usage: wt clone <repository_url>',
-        'ja': '使用方法: wt clone <repository_url>'
+    "usage_add": {
+        "en": "Usage: wt add (ad) <work_name> [<base_branch>]",
+        "ja": "使用方法: wt add (ad) <作業名> [<base_branch>]",
     },
-    'usage_add': {
-        'en': 'Usage: wt add (ad) <work_name> [<base_branch>]',
-        'ja': '使用方法: wt add (ad) <作業名> [<base_branch>]'
+    "usage_rm": {"en": "Usage: wt rm <work_name>", "ja": "使用方法: wt rm <作業名>"},
+    "base_not_found": {
+        "en": "Main repository directory not found",
+        "ja": "メインリポジトリのディレクトリが見つかりません",
     },
-    'usage_rm': {
-        'en': 'Usage: wt rm <work_name>',
-        'ja': '使用方法: wt rm <作業名>'
+    "run_in_wt_dir": {
+        "en": "Please run inside WT_<repository_name>/ directory",
+        "ja": "WT_<repository_name>/ ディレクトリ内で実行してください",
     },
-    'base_not_found': {
-        'en': 'Main repository directory not found',
-        'ja': 'メインリポジトリのディレクトリが見つかりません'
+    "already_exists": {"en": "{} already exists", "ja": "{} はすでに存在します"},
+    "cloning": {"en": "Cloning: {} -> {}", "ja": "クローン中: {} -> {}"},
+    "completed_clone": {
+        "en": "Completed: cloned to {}",
+        "ja": "完了: {} にクローンしました",
     },
-    'run_in_wt_dir': {
-        'en': 'Please run inside WT_<repository_name>/ directory',
-        'ja': 'WT_<repository_name>/ ディレクトリ内で実行してください'
+    "not_git_repo": {
+        "en": "Current directory is not a git repository",
+        "ja": "現在のディレクトリは git リポジトリではありません",
     },
-    'already_exists': {
-        'en': '{} already exists',
-        'ja': '{} はすでに存在します'
+    "run_at_root": {
+        "en": "Please run at repository root directory {}",
+        "ja": "リポジトリのルートディレクトリ {} で実行してください",
     },
-    'cloning': {
-        'en': 'Cloning: {} -> {}',
-        'ja': 'クローン中: {} -> {}'
+    "creating_dir": {"en": "Creating {}...", "ja": "{} を作成中..."},
+    "moving": {"en": "Moving {} -> {}...", "ja": "{} -> {} に移動中..."},
+    "completed_move": {"en": "Completed: moved to {}", "ja": "完了: {} に移動しました"},
+    "use_wt_from": {
+        "en": "Use wt command from {} from next time",
+        "ja": "次回から {} で wt コマンドを使用してください",
     },
-    'completed_clone': {
-        'en': 'Completed: cloned to {}',
-        'ja': '完了: {} にクローンしました'
+    "fetching": {
+        "en": "Fetching latest information from remote...",
+        "ja": "リモートから最新情報を取得中...",
     },
-    'not_git_repo': {
-        'en': 'Current directory is not a git repository',
-        'ja': '現在のディレクトリは git リポジトリではありません'
+    "creating_worktree": {"en": "Creating worktree: {}", "ja": "worktree を作成中: {}"},
+    "completed_worktree": {
+        "en": "Completed: created worktree at {}",
+        "ja": "完了: {} に worktree を作成しました",
     },
-    'run_at_root': {
-        'en': 'Please run at repository root directory {}',
-        'ja': 'リポジトリのルートディレクトリ {} で実行してください'
+    "removing_worktree": {"en": "Removing worktree: {}", "ja": "worktree を削除中: {}"},
+    "completed_remove": {
+        "en": "Completed: removed {}",
+        "ja": "完了: {} を削除しました",
     },
-    'creating_dir': {
-        'en': 'Creating {}...',
-        'ja': '{} を作成中...'
+    "creating_branch": {
+        "en": "Creating new branch '{}' from '{}'",
+        "ja": "ブランチ '{}' を '{}' から作成しています",
     },
-    'moving': {
-        'en': 'Moving {} -> {}...',
-        'ja': '{} -> {} に移動中...'
+    "default_branch_not_found": {
+        "en": "Could not find default branch (main/master)",
+        "ja": "デフォルトブランチ (main/master) が見つかりません",
     },
-    'completed_move': {
-        'en': 'Completed: moved to {}',
-        'ja': '完了: {} に移動しました'
+    "running_hook": {
+        "en": "Running post-add hook: {}",
+        "ja": "post-add hook を実行中: {}",
     },
-    'use_wt_from': {
-        'en': 'Use wt command from {} from next time',
-        'ja': '次回から {} で wt コマンドを使用してください'
+    "hook_not_executable": {
+        "en": "Warning: hook is not executable: {}",
+        "ja": "警告: hook が実行可能ではありません: {}",
     },
-    'fetching': {
-        'en': 'Fetching latest information from remote...',
-        'ja': 'リモートから最新情報を取得中...'
+    "hook_failed": {
+        "en": "Warning: hook exited with code {}",
+        "ja": "警告: hook が終了コード {} で終了しました",
     },
-    'creating_worktree': {
-        'en': 'Creating worktree: {}',
-        'ja': 'worktree を作成中: {}'
+    "usage_clean": {
+        "en": "Usage: wt clean (cl) [--days N] [--merged] [--closed] [--all]",
+        "ja": "使用方法: wt clean (cl) [--days N] [--merged] [--closed] [--all]",
     },
-    'completed_worktree': {
-        'en': 'Completed: created worktree at {}',
-        'ja': '完了: {} に worktree を作成しました'
+    "alias_updated": {
+        "en": "Updated alias: {} -> {}",
+        "ja": "エイリアスを更新しました: {} -> {}",
     },
-    'removing_worktree': {
-        'en': 'Removing worktree: {}',
-        'ja': 'worktree を削除中: {}'
+    "no_clean_targets": {
+        "en": "No worktrees to clean",
+        "ja": "クリーンアップ対象の worktree がありません",
     },
-    'completed_remove': {
-        'en': 'Completed: removed {}',
-        'ja': '完了: {} を削除しました'
+    "clean_target": {
+        "en": "Will remove: {} (created: {}, clean)",
+        "ja": "削除対象: {} (作成日時: {}, 変更なし)",
     },
-    'creating_branch': {
-        'en': "Creating new branch '{}' from '{}'",
-        'ja': "ブランチ '{}' を '{}' から作成しています"
+    "clean_confirm": {
+        "en": "Remove {} worktree(s)? [y/N]: ",
+        "ja": "{} 個の worktree を削除しますか？ [y/N]: ",
     },
-    'default_branch_not_found': {
-        'en': 'Could not find default branch (main/master)',
-        'ja': 'デフォルトブランチ (main/master) が見つかりません'
+    "alias_removed": {"en": "Removed alias: {}", "ja": "エイリアスを削除しました: {}"},
+    "alias_not_found": {
+        "en": "Alias not found: {}",
+        "ja": "エイリアスが見つかりません: {}",
     },
-    'running_hook': {
-        'en': 'Running post-add hook: {}',
-        'ja': 'post-add hook を実行中: {}'
+    "worktree_name": {"en": "Worktree", "ja": "Worktree"},
+    "branch_name": {"en": "Branch", "ja": "ブランチ"},
+    "created_at": {"en": "Created", "ja": "作成日時"},
+    "last_commit": {"en": "Last Commit", "ja": "最終コミット"},
+    "status_label": {"en": "Status", "ja": "状態"},
+    "changes_label": {"en": "Changes", "ja": "変更"},
+    "syncing": {"en": "Syncing: {} -> {}", "ja": "同期中: {} -> {}"},
+    "completed_sync": {
+        "en": "Completed sync of {} files",
+        "ja": "{} 個のファイルを同期しました",
     },
-    'hook_not_executable': {
-        'en': 'Warning: hook is not executable: {}',
-        'ja': '警告: hook が実行可能ではありません: {}'
+    "usage_sync": {
+        "en": "Usage: wt sync (sy) [files...] [--from <name>] [--to <name>]",
+        "ja": "使用方法: wt sync (sy) [files...] [--from <name>] [--to <name>]",
     },
-    'hook_failed': {
-        'en': 'Warning: hook exited with code {}',
-        'ja': '警告: hook が終了コード {} で終了しました'
+    "usage_pr": {
+        "en": "Usage: wt pr add <number>",
+        "ja": "使用方法: wt pr add <number>",
     },
-    'usage_clean': {
-        'en': 'Usage: wt clean (cl) [--days N] [--merged] [--closed] [--all]',
-        'ja': '使用方法: wt clean (cl) [--days N] [--merged] [--closed] [--all]'
+    "usage_stash": {
+        "en": "Usage: wt stash (st) <work_name> [<base_branch>]",
+        "ja": "使用方法: wt stash (st) <work_name> [<base_branch>]",
     },
-    'alias_updated': {
-        'en': 'Updated alias: {} -> {}',
-        'ja': 'エイリアスを更新しました: {} -> {}'
+    "stashing_changes": {
+        "en": "Stashing local changes...",
+        "ja": "ローカルの変更をスタッシュ中...",
     },
-    'no_clean_targets': {
-        'en': 'No worktrees to clean',
-        'ja': 'クリーンアップ対象の worktree がありません'
+    "popping_stash": {
+        "en": "Moving changes to new worktree...",
+        "ja": "変更を新しい worktree に移動中...",
     },
-    'clean_target': {
-        'en': 'Will remove: {} (created: {}, clean)',
-        'ja': '削除対象: {} (作成日時: {}, 変更なし)'
+    "nothing_to_stash": {
+        "en": "No local changes to stash.",
+        "ja": "スタッシュする変更がありません",
     },
-    'clean_confirm': {
-        'en': 'Remove {} worktree(s)? [y/N]: ',
-        'ja': '{} 個の worktree を削除しますか？ [y/N]: '
-    },
-    'alias_removed': {
-        'en': 'Removed alias: {}',
-        'ja': 'エイリアスを削除しました: {}'
-    },
-    'alias_not_found': {
-        'en': 'Alias not found: {}',
-        'ja': 'エイリアスが見つかりません: {}'
-    },
-    'worktree_name': {
-        'en': 'Worktree',
-        'ja': 'Worktree'
-    },
-    'branch_name': {
-        'en': 'Branch',
-        'ja': 'ブランチ'
-    },
-    'created_at': {
-        'en': 'Created',
-        'ja': '作成日時'
-    },
-    'last_commit': {
-        'en': 'Last Commit',
-        'ja': '最終コミット'
-    },
-    'status_label': {
-        'en': 'Status',
-        'ja': '状態'
-    },
-    'changes_label': {
-        'en': 'Changes',
-        'ja': '変更'
-    },
-    'syncing': {
-        'en': 'Syncing: {} -> {}',
-        'ja': '同期中: {} -> {}'
-    },
-    'completed_sync': {
-        'en': 'Completed sync of {} files',
-        'ja': '{} 個のファイルを同期しました'
-    },
-    'usage_sync': {
-        'en': 'Usage: wt sync (sy) [files...] [--from <name>] [--to <name>]',
-        'ja': '使用方法: wt sync (sy) [files...] [--from <name>] [--to <name>]'
-    },
-    'usage_pr': {
-        'en': 'Usage: wt pr add <number>',
-        'ja': '使用方法: wt pr add <number>'
-    },
-    'usage_stash': {
-        'en': 'Usage: wt stash (st) <work_name> [<base_branch>]',
-        'ja': '使用方法: wt stash (st) <work_name> [<base_branch>]'
-    },
-    'stashing_changes': {
-        'en': 'Stashing local changes...',
-        'ja': 'ローカルの変更をスタッシュ中...'
-    },
-    'popping_stash': {
-        'en': 'Moving changes to new worktree...',
-        'ja': '変更を新しい worktree に移動中...'
-    },
-    'nothing_to_stash': {
-        'en': 'No local changes to stash.',
-        'ja': 'スタッシュする変更がありません'
-    }
 }
 
 
 def msg(key: str, *args) -> str:
     """言語に応じたメッセージを取得"""
-    lang = 'ja' if is_japanese() else 'en'
+    lang = "ja" if is_japanese() else "en"
     message = MESSAGES.get(key, {}).get(lang, key)
     if args:
         return message.format(*args)
     return message
 
 
-def run_command(cmd: list[str], cwd: Path = None, check: bool = True) -> subprocess.CompletedProcess:
+def run_command(
+    cmd: list[str], cwd: Path = None, check: bool = True
+) -> subprocess.CompletedProcess:
     """コマンドを実行"""
     try:
         # print(f"DEBUG: Running command: {cmd} cwd={cwd}", file=sys.stderr)
         result = subprocess.run(
-            cmd,
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            check=check
+            cmd, cwd=cwd, capture_output=True, text=True, check=check
         )
         return result
     except subprocess.CalledProcessError as e:
-        print(msg('error', e.stderr), file=sys.stderr)
+        print(msg("error", e.stderr), file=sys.stderr)
         sys.exit(1)
 
 
 def get_repository_name(url: str) -> str:
     """リポジトリ URL から名前を抽出"""
     # URL から .git を削除して最後の部分を取得
-    match = re.search(r'/([^/]+?)(?:\.git)?$', url)
+    match = re.search(r"/([^/]+?)(?:\.git)?$", url)
     if match:
         name = match.group(1)
         # サービス名などが含まれる場合のクリーンアップ
-        return name.split(':')[-1]
+        return name.split(":")[-1]
     # ローカルパスの場合
     return Path(url).stem
 
@@ -252,17 +200,17 @@ def load_config(base_dir: Path) -> dict:
     default_config = {
         "worktrees_dir": ".worktrees",
         "sync_files": [".env"],
-        "auto_copy_on_add": True
+        "auto_copy_on_add": True,
     }
-    
+
     if config_file.exists():
         try:
-            with open(config_file, 'r', encoding='utf-8') as f:
+            with open(config_file, "r", encoding="utf-8") as f:
                 user_config = toml.load(f)
                 default_config.update(user_config)
         except Exception as e:
-            print(msg('error', f"Failed to load config: {e}"), file=sys.stderr)
-            
+            print(msg("error", f"Failed to load config: {e}"), file=sys.stderr)
+
     return default_config
 
 
@@ -271,8 +219,8 @@ def save_config(base_dir: Path, config: dict):
     wt_dir = base_dir / ".wt"
     wt_dir.mkdir(exist_ok=True)
     config_file = wt_dir / "config.toml"
-    
-    with open(config_file, 'w', encoding='utf-8') as f:
+
+    with open(config_file, "w", encoding="utf-8") as f:
         toml.dump(config, f)
 
 
@@ -286,32 +234,35 @@ def create_hook_template(base_dir: Path):
     # config.toml
     config_file = wt_dir / "config.toml"
     if not config_file.exists():
-        save_config(base_dir, {
-            "worktrees_dir": ".worktrees",
-            "sync_files": [".env"],
-            "auto_copy_on_add": True
-        })
+        save_config(
+            base_dir,
+            {
+                "worktrees_dir": ".worktrees",
+                "sync_files": [".env"],
+                "auto_copy_on_add": True,
+            },
+        )
 
     # .gitignore (repository root) に worktrees_dir を追加
     config = load_config(base_dir)
     worktrees_dir_name = config.get("worktrees_dir", ".worktrees")
     root_gitignore = base_dir / ".gitignore"
-    
+
     entries = [f"{worktrees_dir_name}/"]
-    
+
     if root_gitignore.exists():
-        content = root_gitignore.read_text(encoding='utf-8')
+        content = root_gitignore.read_text(encoding="utf-8")
         updated = False
         for entry in entries:
             if entry not in content:
-                if content and not content.endswith('\n'):
-                    content += '\n'
+                if content and not content.endswith("\n"):
+                    content += "\n"
                 content += f"{entry}\n"
                 updated = True
         if updated:
-            root_gitignore.write_text(content, encoding='utf-8')
+            root_gitignore.write_text(content, encoding="utf-8")
     else:
-        root_gitignore.write_text("\n".join(entries) + "\n", encoding='utf-8')
+        root_gitignore.write_text("\n".join(entries) + "\n", encoding="utf-8")
 
     # post-add hook テンプレート
     hook_file = wt_dir / "post-add"
@@ -530,10 +481,7 @@ The `post-add` hook is a script that runs automatically after creating a worktre
 def find_base_dir() -> Path | None:
     """現在のディレクトリまたは親ディレクトリから git root を探す"""
     try:
-        result = run_command(
-            ["git", "rev-parse", "--show-toplevel"],
-            check=False
-        )
+        result = run_command(["git", "rev-parse", "--show-toplevel"], check=False)
         if result.returncode == 0:
             return Path(result.stdout.strip())
     except Exception:
@@ -551,21 +499,21 @@ def find_base_dir() -> Path | None:
 def cmd_clone(args: list[str]):
     """wt clone <repository_url> [dest_dir] - Clone a repository"""
     if len(args) < 1:
-        print(msg('usage'), file=sys.stderr)
+        print(msg("usage"), file=sys.stderr)
         sys.exit(1)
 
     repo_url = args[0]
     repo_name = get_repository_name(repo_url)
-    
+
     dest_dir = Path(args[1]) if len(args) > 1 else Path(repo_name)
 
     if dest_dir.exists():
-        print(msg('error', msg('already_exists', dest_dir)), file=sys.stderr)
+        print(msg("error", msg("already_exists", dest_dir)), file=sys.stderr)
         sys.exit(1)
 
-    print(msg('cloning', repo_url, dest_dir), file=sys.stderr)
+    print(msg("cloning", repo_url, dest_dir), file=sys.stderr)
     run_command(["git", "clone", repo_url, str(dest_dir)])
-    print(msg('completed_clone', dest_dir), file=sys.stderr)
+    print(msg("completed_clone", dest_dir), file=sys.stderr)
 
     # post-add hook と設定ファイルを作成
     create_hook_template(dest_dir)
@@ -577,13 +525,11 @@ def cmd_init(args: list[str]):
 
     # 現在のディレクトリが git リポジトリか確認
     result = run_command(
-        ["git", "rev-parse", "--show-toplevel"],
-        cwd=current_dir,
-        check=False
+        ["git", "rev-parse", "--show-toplevel"], cwd=current_dir, check=False
     )
 
     if result.returncode != 0:
-        print(msg('error', msg('not_git_repo')), file=sys.stderr)
+        print(msg("error", msg("not_git_repo")), file=sys.stderr)
         sys.exit(1)
 
     git_root = Path(result.stdout.strip())
@@ -595,24 +541,35 @@ def cmd_init(args: list[str]):
 def get_default_branch(base_dir: Path) -> str:
     """Detect default branch (main/master)"""
     # 1. Try origin/HEAD
-    result = run_command(["git", "rev-parse", "--abbrev-ref", "origin/HEAD"], cwd=base_dir, check=False)
+    result = run_command(
+        ["git", "rev-parse", "--abbrev-ref", "origin/HEAD"], cwd=base_dir, check=False
+    )
     if result.returncode == 0:
         return result.stdout.strip().replace("origin/", "")
-    
+
     # 2. Try common names
     for b in ["main", "master"]:
-        if run_command(["git", "rev-parse", "--verify", b], cwd=base_dir, check=False).returncode == 0:
+        if (
+            run_command(
+                ["git", "rev-parse", "--verify", b], cwd=base_dir, check=False
+            ).returncode
+            == 0
+        ):
             return b
 
     # 3. Fallback to current HEAD
-    result = run_command(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=base_dir, check=False)
+    result = run_command(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=base_dir, check=False
+    )
     if result.returncode == 0:
         return result.stdout.strip()
-        
+
     return None
 
 
-def run_post_add_hook(worktree_path: Path, work_name: str, base_dir: Path, branch: str = None):
+def run_post_add_hook(
+    worktree_path: Path, work_name: str, base_dir: Path, branch: str = None
+):
     """worktree 作成後の hook を実行"""
     # .wt/post-add を探す
     hook_path = base_dir / ".wt" / "post-add"
@@ -621,20 +578,22 @@ def run_post_add_hook(worktree_path: Path, work_name: str, base_dir: Path, branc
         return  # hook がなければ何もしない
 
     if not os.access(hook_path, os.X_OK):
-        print(msg('hook_not_executable', hook_path), file=sys.stderr)
+        print(msg("hook_not_executable", hook_path), file=sys.stderr)
         return
 
     # 環境変数を設定
     env = os.environ.copy()
-    env.update({
-        'WT_WORKTREE_PATH': str(worktree_path),
-        'WT_WORKTREE_NAME': work_name,
-        'WT_BASE_DIR': str(base_dir),
-        'WT_BRANCH': branch or work_name,
-        'WT_ACTION': 'add'
-    })
+    env.update(
+        {
+            "WT_WORKTREE_PATH": str(worktree_path),
+            "WT_WORKTREE_NAME": work_name,
+            "WT_BASE_DIR": str(base_dir),
+            "WT_BRANCH": branch or work_name,
+            "WT_ACTION": "add",
+        }
+    )
 
-    print(msg('running_hook', hook_path), file=sys.stderr)
+    print(msg("running_hook", hook_path), file=sys.stderr)
     try:
         result = subprocess.run(
             [str(hook_path)],
@@ -642,22 +601,27 @@ def run_post_add_hook(worktree_path: Path, work_name: str, base_dir: Path, branc
             env=env,
             stdout=sys.stderr,  # stdout を stderr にリダイレクト (cd 連携のため)
             stderr=sys.stderr,
-            check=False
+            check=False,
         )
 
         if result.returncode != 0:
-            print(msg('hook_failed', result.returncode), file=sys.stderr)
+            print(msg("hook_failed", result.returncode), file=sys.stderr)
     except Exception as e:
-        print(msg('error', str(e)), file=sys.stderr)
+        print(msg("error", str(e)), file=sys.stderr)
 
 
-def add_worktree(work_name: str, branch_to_use: str = None, new_branch_base: str = None, base_dir: Path = None) -> Path:
+def add_worktree(
+    work_name: str,
+    branch_to_use: str = None,
+    new_branch_base: str = None,
+    base_dir: Path = None,
+) -> Path:
     """Core logic to add a worktree, reused by cmd_add and cmd_stash"""
     if not base_dir:
         base_dir = find_base_dir()
     if not base_dir:
-        print(msg('error', msg('base_not_found')), file=sys.stderr)
-        print(msg('run_in_wt_dir'), file=sys.stderr)
+        print(msg("error", msg("base_not_found")), file=sys.stderr)
+        print(msg("run_in_wt_dir"), file=sys.stderr)
         sys.exit(1)
 
     # 設定を読み込む
@@ -670,48 +634,58 @@ def add_worktree(work_name: str, branch_to_use: str = None, new_branch_base: str
     worktree_path = worktrees_dir / work_name
 
     if worktree_path.exists():
-        print(msg('error', msg('already_exists', worktree_path)), file=sys.stderr)
+        print(msg("error", msg("already_exists", worktree_path)), file=sys.stderr)
         sys.exit(1)
 
     # ブランチを最新に更新
-    print(msg('fetching'), file=sys.stderr)
+    print(msg("fetching"), file=sys.stderr)
     run_command(["git", "fetch", "--all"], cwd=base_dir)
 
     # 本体 (main) を base branch の最新に更新
     result = run_command(
-        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-        cwd=base_dir,
-        check=False
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=base_dir, check=False
     )
     if result.returncode == 0:
         current_branch = result.stdout.strip()
         result = run_command(
             ["git", "rev-parse", "--verify", f"origin/{current_branch}"],
             cwd=base_dir,
-            check=False
+            check=False,
         )
         if result.returncode == 0:
-            run_command(["git", "pull", "origin", current_branch], cwd=base_dir, check=False)
+            run_command(
+                ["git", "pull", "origin", current_branch], cwd=base_dir, check=False
+            )
 
     # ブランチ作成/チェックアウト
     final_branch_name = None
     if new_branch_base:
         # 新しいブランチをベースから作成
         final_branch_name = work_name
-        print(msg('creating_branch', final_branch_name, new_branch_base), file=sys.stderr)
+        print(
+            msg("creating_branch", final_branch_name, new_branch_base), file=sys.stderr
+        )
         result = run_command(
-            ["git", "worktree", "add", "-b", final_branch_name, str(worktree_path), new_branch_base],
+            [
+                "git",
+                "worktree",
+                "add",
+                "-b",
+                final_branch_name,
+                str(worktree_path),
+                new_branch_base,
+            ],
             cwd=base_dir,
-            check=False
+            check=False,
         )
     elif branch_to_use:
         # 指定されたブランチをチェックアウト
         final_branch_name = branch_to_use
-        print(msg('creating_worktree', worktree_path), file=sys.stderr)
+        print(msg("creating_worktree", worktree_path), file=sys.stderr)
         result = run_command(
             ["git", "worktree", "add", str(worktree_path), final_branch_name],
             cwd=base_dir,
-            check=False
+            check=False,
         )
     else:
         # 自動判定
@@ -721,35 +695,41 @@ def add_worktree(work_name: str, branch_to_use: str = None, new_branch_base: str
         check_local = run_command(
             ["git", "rev-parse", "--verify", final_branch_name],
             cwd=base_dir,
-            check=False
+            check=False,
         )
         check_remote = run_command(
             ["git", "rev-parse", "--verify", f"origin/{final_branch_name}"],
             cwd=base_dir,
-            check=False
+            check=False,
         )
 
         if check_local.returncode == 0 or check_remote.returncode == 0:
             if check_remote.returncode == 0:
-                print(msg('creating_worktree', worktree_path), file=sys.stderr)
+                print(msg("creating_worktree", worktree_path), file=sys.stderr)
                 result = run_command(
-                    ["git", "worktree", "add", str(worktree_path), f"origin/{final_branch_name}"],
+                    [
+                        "git",
+                        "worktree",
+                        "add",
+                        str(worktree_path),
+                        f"origin/{final_branch_name}",
+                    ],
                     cwd=base_dir,
-                    check=False
+                    check=False,
                 )
             else:
-                print(msg('creating_worktree', worktree_path), file=sys.stderr)
+                print(msg("creating_worktree", worktree_path), file=sys.stderr)
                 result = run_command(
                     ["git", "worktree", "add", str(worktree_path), final_branch_name],
                     cwd=base_dir,
-                    check=False
+                    check=False,
                 )
         else:
             # デフォルトブランチを探す
             result_sym = run_command(
                 ["git", "symbolic-ref", "refs/remotes/origin/HEAD", "--short"],
                 cwd=base_dir,
-                check=False
+                check=False,
             )
 
             detected_base = None
@@ -758,25 +738,49 @@ def add_worktree(work_name: str, branch_to_use: str = None, new_branch_base: str
             else:
                 # remote/local main/master の順に探す
                 for b in ["origin/main", "origin/master", "main", "master"]:
-                    if run_command(["git", "rev-parse", "--verify", b], cwd=base_dir, check=False).returncode == 0:
+                    if (
+                        run_command(
+                            ["git", "rev-parse", "--verify", b],
+                            cwd=base_dir,
+                            check=False,
+                        ).returncode
+                        == 0
+                    ):
                         detected_base = b
                         break
-                
+
                 if not detected_base:
                     # 最終手段として現在のブランチを使用
-                    res_curr = run_command(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=base_dir, check=False)
+                    res_curr = run_command(
+                        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                        cwd=base_dir,
+                        check=False,
+                    )
                     if res_curr.returncode == 0:
                         detected_base = res_curr.stdout.strip()
 
                 if not detected_base:
-                    print(msg('error', msg('default_branch_not_found')), file=sys.stderr)
+                    print(
+                        msg("error", msg("default_branch_not_found")), file=sys.stderr
+                    )
                     sys.exit(1)
 
-            print(msg('creating_branch', final_branch_name, detected_base), file=sys.stderr)
+            print(
+                msg("creating_branch", final_branch_name, detected_base),
+                file=sys.stderr,
+            )
             result = run_command(
-                ["git", "worktree", "add", "-b", final_branch_name, str(worktree_path), detected_base],
+                [
+                    "git",
+                    "worktree",
+                    "add",
+                    "-b",
+                    final_branch_name,
+                    str(worktree_path),
+                    detected_base,
+                ],
                 cwd=base_dir,
-                check=False
+                check=False,
             )
 
     if result.returncode == 0:
@@ -787,8 +791,9 @@ def add_worktree(work_name: str, branch_to_use: str = None, new_branch_base: str
                 src = base_dir / file_name
                 dst = worktree_path / file_name
                 if src.exists():
-                    print(msg('syncing', src, dst), file=sys.stderr)
+                    print(msg("syncing", src, dst), file=sys.stderr)
                     import shutil
+
                     shutil.copy2(src, dst)
 
         # post-add hook
@@ -803,24 +808,24 @@ def add_worktree(work_name: str, branch_to_use: str = None, new_branch_base: str
 def cmd_add(args: list[str]):
     """wt add <work_name> [<base_branch>] - Add a worktree"""
     if len(args) < 1:
-        print(msg('usage_add'), file=sys.stderr)
+        print(msg("usage_add"), file=sys.stderr)
         sys.exit(1)
 
     work_name = args[0]
     branch_to_use = args[1] if len(args) >= 2 else None
-    
+
     add_worktree(work_name, branch_to_use=branch_to_use)
 
 
 def cmd_stash(args: list[str]):
     """wt stash <work_name> [<base_branch>] - Stash changes and move to new worktree"""
     if len(args) < 1:
-        print(msg('usage_stash'), file=sys.stderr)
+        print(msg("usage_stash"), file=sys.stderr)
         sys.exit(1)
 
     base_dir = find_base_dir()
     if not base_dir:
-        print(msg('error', msg('base_not_found')), file=sys.stderr)
+        print(msg("error", msg("base_not_found")), file=sys.stderr)
         sys.exit(1)
 
     # 変更があるかチェック
@@ -828,59 +833,67 @@ def cmd_stash(args: list[str]):
     has_changes = bool(result.stdout.strip())
 
     if has_changes:
-        print(msg('stashing_changes'), file=sys.stderr)
+        print(msg("stashing_changes"), file=sys.stderr)
         # stash する
         # -u (include untracked)
-        run_command(["git", "stash", "push", "-u", "-m", f"easy-worktree stash for {args[0]}"], cwd=base_dir)
+        run_command(
+            ["git", "stash", "push", "-u", "-m", f"easy-worktree stash for {args[0]}"],
+            cwd=base_dir,
+        )
     else:
-        print(msg('nothing_to_stash'), file=sys.stderr)
+        print(msg("nothing_to_stash"), file=sys.stderr)
 
     # 新しい worktree を作成
     work_name = args[0]
-    
+
     # base_branch が指定されていない場合は現在のブランチをベースにする
     # 指定されている場合はそれをベースにする
     new_branch_base = args[1] if len(args) >= 2 else None
     if not new_branch_base:
-        res = run_command(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=base_dir, check=False)
+        res = run_command(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=base_dir, check=False
+        )
         if res.returncode == 0:
             new_branch_base = res.stdout.strip()
 
     # aliasはサポートしないでおく（とりあえずシンプルに）
     # wt stash は常に新しいブランチを作成する振る舞いにする
-    wt_path = add_worktree(work_name, new_branch_base=new_branch_base, base_dir=base_dir)
+    wt_path = add_worktree(
+        work_name, new_branch_base=new_branch_base, base_dir=base_dir
+    )
 
     if has_changes and wt_path:
-        print(msg('popping_stash'), file=sys.stderr)
+        print(msg("popping_stash"), file=sys.stderr)
         # 新しい worktree で stash pop
         run_command(["git", "stash", "pop"], cwd=wt_path)
-
-
 
 
 def cmd_pr(args: list[str]):
     """wt pr <add|co> <number> - Pull Request management"""
     if len(args) < 2:
-        print(msg('usage_pr'), file=sys.stderr)
+        print(msg("usage_pr"), file=sys.stderr)
         sys.exit(1)
 
     subcommand = args[0]
     pr_number = args[1]
-    
+
     # Ensure pr_number is a digit
     if not pr_number.isdigit():
-        print(msg('error', f"PR number must be a digit: {pr_number}"), file=sys.stderr)
+        print(msg("error", f"PR number must be a digit: {pr_number}"), file=sys.stderr)
         sys.exit(1)
 
     base_dir = find_base_dir()
     if not base_dir:
-        print(msg('error', msg('base_not_found')), file=sys.stderr)
+        print(msg("error", msg("base_not_found")), file=sys.stderr)
         sys.exit(1)
 
     if subcommand == "add":
         # Check if gh command exists
         if shutil.which("gh") is None:
-            print(msg('error', "GitHub CLI (gh) is required for this command"), file=sys.stderr)
+            print(
+                msg("error", "GitHub CLI (gh) is required for this command"),
+                file=sys.stderr,
+            )
             sys.exit(1)
 
         print(f"Verifying PR #{pr_number}...", file=sys.stderr)
@@ -888,108 +901,103 @@ def cmd_pr(args: list[str]):
         verify_cmd = ["gh", "pr", "view", pr_number, "--json", "number"]
         result = run_command(verify_cmd, cwd=base_dir, check=False)
         if result.returncode != 0:
-            print(msg('error', f"PR #{pr_number} not found (or access denied)"), file=sys.stderr)
+            print(
+                msg("error", f"PR #{pr_number} not found (or access denied)"),
+                file=sys.stderr,
+            )
             sys.exit(1)
 
         branch_name = f"pr-{pr_number}"
         worktree_name = f"pr@{pr_number}"
-        
+
         print(f"Fetching PR #{pr_number} contents...", file=sys.stderr)
         # Fetch PR head to a local branch
         # git fetch origin pull/ID/head:local-branch
         fetch_cmd = ["git", "fetch", "origin", f"pull/{pr_number}/head:{branch_name}"]
-        # We might want to handle case where origin doesn't exist or pull ref is different, 
+        # We might want to handle case where origin doesn't exist or pull ref is different,
         # but origin pull/ID/head is standard for GitHub.
         run_command(fetch_cmd, cwd=base_dir)
-        
+
         print(f"Creating worktree {worktree_name}...", file=sys.stderr)
         add_worktree(worktree_name, branch_to_use=branch_name, base_dir=base_dir)
-        
+
     elif subcommand == "co":
         # Just a shortcut for checkout pr@<number>
         cmd_checkout([f"pr@{pr_number}"])
     else:
-        print(msg('usage_pr'), file=sys.stderr)
+        print(msg("usage_pr"), file=sys.stderr)
         sys.exit(1)
 
 
 def get_worktree_info(base_dir: Path) -> list[dict]:
     """worktree の詳細情報を取得"""
-    result = run_command(
-        ["git", "worktree", "list", "--porcelain"],
-        cwd=base_dir
-    )
+    result = run_command(["git", "worktree", "list", "--porcelain"], cwd=base_dir)
 
     worktrees = []
     current = {}
 
-    for line in result.stdout.strip().split('\n'):
+    for line in result.stdout.strip().split("\n"):
         if not line:
             if current:
                 worktrees.append(current)
                 current = {}
             continue
 
-        if line.startswith('worktree '):
-            current['path'] = line.split(' ', 1)[1]
-        elif line.startswith('HEAD '):
-            current['head'] = line.split(' ', 1)[1]
-        elif line.startswith('branch '):
-            current['branch'] = line.split(' ', 1)[1].replace('refs/heads/', '')
-        elif line.startswith('detached'):
-            current['branch'] = 'DETACHED'
+        if line.startswith("worktree "):
+            current["path"] = line.split(" ", 1)[1]
+        elif line.startswith("HEAD "):
+            current["head"] = line.split(" ", 1)[1]
+        elif line.startswith("branch "):
+            current["branch"] = line.split(" ", 1)[1].replace("refs/heads/", "")
+        elif line.startswith("detached"):
+            current["branch"] = "DETACHED"
 
     if current:
         worktrees.append(current)
 
     # 各 worktree の詳細情報を取得
     for wt in worktrees:
-        path = Path(wt['path'])
+        path = Path(wt["path"])
 
         # 作成日時（ディレクトリの作成時刻）
         if path.exists():
             stat_info = path.stat()
-            wt['created'] = datetime.fromtimestamp(stat_info.st_ctime)
+            wt["created"] = datetime.fromtimestamp(stat_info.st_ctime)
 
         # 最終コミット日時
         result = run_command(
-            ["git", "log", "-1", "--format=%ct", wt.get('head', 'HEAD')],
+            ["git", "log", "-1", "--format=%ct", wt.get("head", "HEAD")],
             cwd=base_dir,
-            check=False
+            check=False,
         )
         if result.returncode == 0 and result.stdout.strip():
-            wt['last_commit'] = datetime.fromtimestamp(int(result.stdout.strip()))
+            wt["last_commit"] = datetime.fromtimestamp(int(result.stdout.strip()))
 
         # git status（変更があるか）
-        result = run_command(
-            ["git", "status", "--porcelain"],
-            cwd=path,
-            check=False
-        )
-        wt['is_clean'] = result.returncode == 0 and not result.stdout.strip()
-        wt['has_untracked'] = '??' in result.stdout
+        result = run_command(["git", "status", "--porcelain"], cwd=path, check=False)
+        wt["is_clean"] = result.returncode == 0 and not result.stdout.strip()
+        wt["has_untracked"] = "??" in result.stdout
 
         # Diff stats取得
         result_diff = run_command(
-            ["git", "diff", "HEAD", "--shortstat"],
-            cwd=path,
-            check=False
+            ["git", "diff", "HEAD", "--shortstat"], cwd=path, check=False
         )
-        
+
         insertions = 0
         deletions = 0
         if result_diff.returncode == 0 and result_diff.stdout.strip():
             out = result_diff.stdout.strip()
-            m_plus = re.search(r'(\d+) insertion', out)
-            m_minus = re.search(r'(\d+) deletion', out)
-            if m_plus: insertions = int(m_plus.group(1))
-            if m_minus: deletions = int(m_minus.group(1))
-            
-        wt['insertions'] = insertions
-        wt['deletions'] = deletions
+            m_plus = re.search(r"(\d+) insertion", out)
+            m_minus = re.search(r"(\d+) deletion", out)
+            if m_plus:
+                insertions = int(m_plus.group(1))
+            if m_minus:
+                deletions = int(m_minus.group(1))
+
+        wt["insertions"] = insertions
+        wt["deletions"] = deletions
 
     return worktrees
-
 
     if result.returncode == 0:
         return result.stdout.strip()
@@ -998,65 +1006,76 @@ def get_worktree_info(base_dir: Path) -> list[dict]:
 
 def get_pr_info(branch: str, cwd: Path = None) -> str:
     """Get rich GitHub PR information for the branch"""
-    if not branch or branch == 'HEAD' or branch == 'DETACHED':
+    if not branch or branch == "HEAD" or branch == "DETACHED":
         return ""
-    
+
     # Check if gh command exists
     if shutil.which("gh") is None:
         return ""
-    
+
     import json
-    cmd = ["gh", "pr", "list", "--head", branch, "--state", "all", "--json", "state,isDraft,url,createdAt,number"]
+
+    cmd = [
+        "gh",
+        "pr",
+        "list",
+        "--head",
+        branch,
+        "--state",
+        "all",
+        "--json",
+        "state,isDraft,url,createdAt,number",
+    ]
     result = run_command(cmd, cwd=cwd, check=False)
-    
+
     if result.returncode != 0 or not result.stdout.strip():
         return ""
-        
+
     try:
         prs = json.loads(result.stdout)
         if not prs:
             return ""
-        
+
         pr = prs[0]
-        state = pr['state']
-        is_draft = pr['isDraft']
-        url = pr['url']
-        created_at_str = pr['createdAt']
-        number = pr['number']
-        
+        state = pr["state"]
+        is_draft = pr["isDraft"]
+        url = pr["url"]
+        created_at_str = pr["createdAt"]
+        number = pr["number"]
+
         # Parse created_at
         # ISO format: 2024-03-20T12:00:00Z
         try:
             # Localize to local timezone
-            dt_aware = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+            dt_aware = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
             dt_local = dt_aware.astimezone().replace(tzinfo=None)
             rel_time = get_relative_time(dt_local)
         except Exception:
             rel_time = "N/A"
-            
+
         # Symbols and Colors
         GREEN = "\033[32m"
         GRAY = "\033[90m"
         MAGENTA = "\033[35m"
         RED = "\033[31m"
         RESET = "\033[0m"
-        
+
         if is_draft:
             symbol = f"{GRAY}◌{RESET}"
         elif state == "OPEN":
             symbol = f"{GREEN}●{RESET}"
         elif state == "MERGED":
             symbol = f"{MAGENTA}✔{RESET}"
-        else: # CLOSED
+        else:  # CLOSED
             symbol = f"{RED}✘{RESET}"
-            
+
         # Hyperlink for #NUMBER
         # ANSI sequence for hyperlink: ESC ] 8 ; ; URL ESC \ TEXT ESC ] 8 ; ; ESC \
         link_start = f"\x1b]8;;{url}\x1b\\"
         link_end = "\x1b]8;;\x1b\\"
-        
+
         return f"{symbol} {link_start}#{number}{link_end} ({rel_time})"
-        
+
     except Exception:
         return ""
 
@@ -1065,16 +1084,16 @@ def get_relative_time(dt: datetime) -> str:
     """Get relative time string"""
     if not dt:
         return "N/A"
-    
+
     now = datetime.now()
     diff = now - dt
-    
+
     seconds = diff.total_seconds()
     days = diff.days
-    
+
     if days < 0:
         return "just now"
-    
+
     if days == 0:
         if seconds < 60:
             return "just now"
@@ -1083,17 +1102,17 @@ def get_relative_time(dt: datetime) -> str:
             return f"{minutes}m ago"
         hours = int(seconds / 3600)
         return f"{hours}h ago"
-    
+
     if days == 1:
         return "yesterday"
-    
+
     if days < 30:
         return f"{days}d ago"
-    
+
     if days < 365:
         months = int(days / 30)
         return f"{months}mo ago"
-    
+
     years = int(days / 365)
     return f"{years}y ago"
 
@@ -1102,32 +1121,36 @@ def cmd_list(args: list[str]):
     """wt list - List worktrees"""
     base_dir = find_base_dir()
     if not base_dir:
-        print(msg('error', msg('base_not_found')), file=sys.stderr)
+        print(msg("error", msg("base_not_found")), file=sys.stderr)
         sys.exit(1)
 
     # --quiet / -q オプション（xargs 用）
-    quiet = '--quiet' in args or '-q' in args
-    show_pr = '--pr' in args
+    quiet = "--quiet" in args or "-q" in args
+    show_pr = "--pr" in args
 
     worktrees = get_worktree_info(base_dir)
 
     # ソート: 作成日時の降順（最新が上）
-    worktrees.sort(key=lambda x: x.get('created', datetime.min), reverse=True)
+    worktrees.sort(key=lambda x: x.get("created", datetime.min), reverse=True)
 
     # PR infoの取得
     if show_pr:
         for wt in worktrees:
-            branch = wt.get('branch', '')
+            branch = wt.get("branch", "")
             if branch:
-                wt['pr_info'] = get_pr_info(branch, cwd=base_dir)
+                wt["pr_info"] = get_pr_info(branch, cwd=base_dir)
 
     # 相対時間の計算
     for wt in worktrees:
-        wt['relative_time'] = get_relative_time(wt.get('created'))
+        wt["relative_time"] = get_relative_time(wt.get("created"))
 
     if quiet:
         for wt in worktrees:
-            print(Path(wt['path']).name if Path(wt['path']).name != base_dir.name else "main")
+            print(
+                Path(wt["path"]).name
+                if Path(wt["path"]).name != base_dir.name
+                else "main"
+            )
         return
 
     # "Changes" カラムの表示文字列作成
@@ -1135,12 +1158,12 @@ def cmd_list(args: list[str]):
     RED = "\033[31m"
     GRAY = "\033[90m"
     RESET = "\033[0m"
-    
+
     for wt in worktrees:
-        plus = wt.get('insertions', 0)
-        minus = wt.get('deletions', 0)
-        untracked = wt.get('has_untracked', False)
-        
+        plus = wt.get("insertions", 0)
+        minus = wt.get("deletions", 0)
+        untracked = wt.get("has_untracked", False)
+
         parts = []
         clean_parts = []
         if plus > 0:
@@ -1152,25 +1175,51 @@ def cmd_list(args: list[str]):
         if untracked:
             parts.append(f"{GRAY}??{RESET}")
             clean_parts.append("??")
-            
+
         if not parts:
-            wt['changes_display'] = "-"
-            wt['changes_clean_len'] = 1
+            wt["changes_display"] = "-"
+            wt["changes_clean_len"] = 1
         else:
-            wt['changes_display'] = " ".join(parts)
-            wt['changes_clean_len'] = len(" ".join(clean_parts))
+            wt["changes_display"] = " ".join(parts)
+            wt["changes_clean_len"] = len(" ".join(clean_parts))
 
     # カラム幅の計算
-    name_w = max(len(msg('worktree_name')), max((len(Path(wt['path']).name) for wt in worktrees), default=0)) + 2
-    branch_w = max(len(msg('branch_name')), max((len(wt.get('branch', 'N/A')) for wt in worktrees), default=0)) + 2
-    time_w = max(len("Created"), max((len(wt.get('relative_time', '')) for wt in worktrees), default=0)) + 2
-    status_w = max(len(msg('changes_label')), max((wt['changes_clean_len'] for wt in worktrees), default=0)) + 2
+    name_w = (
+        max(
+            len(msg("worktree_name")),
+            max((len(Path(wt["path"]).name) for wt in worktrees), default=0),
+        )
+        + 2
+    )
+    branch_w = (
+        max(
+            len(msg("branch_name")),
+            max((len(wt.get("branch", "N/A")) for wt in worktrees), default=0),
+        )
+        + 2
+    )
+    time_w = (
+        max(
+            len("Created"),
+            max((len(wt.get("relative_time", "")) for wt in worktrees), default=0),
+        )
+        + 2
+    )
+    status_w = (
+        max(
+            len(msg("changes_label")),
+            max((wt["changes_clean_len"] for wt in worktrees), default=0),
+        )
+        + 2
+    )
     pr_w = 0
     if show_pr:
         # PR info contains ANSI codes, so calculate real length
         import re
+
         # More robust ANSI escape regex including hyperlinks
-        ansi_escape = re.compile(r'''
+        ansi_escape = re.compile(
+            r"""
             \x1B(?:
                 [@-Z\\-_]
             |
@@ -1178,17 +1227,26 @@ def cmd_list(args: list[str]):
             |
                 \][0-9]*;.*?(\x1B\\|\x07)
             )
-        ''', re.VERBOSE)
+        """,
+            re.VERBOSE,
+        )
+
         def clean_len(s):
-            return len(ansi_escape.sub('', s))
-            
-        pr_w = max(3, max((clean_len(wt.get('pr_info', '')) for wt in worktrees), default=0)) + 2
+            return len(ansi_escape.sub("", s))
+
+        pr_w = (
+            max(
+                3,
+                max((clean_len(wt.get("pr_info", "")) for wt in worktrees), default=0),
+            )
+            + 2
+        )
 
     # ヘッダー (色付き)
     CYAN = "\033[36m"
     RESET = "\033[0m"
     BOLD = "\033[1m"
-    
+
     base_header = f"{msg('worktree_name'):<{name_w}} {msg('branch_name'):<{branch_w}} {'Created':<{time_w}} {msg('changes_label'):<{status_w}}"
     if show_pr:
         header = f"{BOLD}{base_header}   PR{RESET}"
@@ -1196,49 +1254,64 @@ def cmd_list(args: list[str]):
     else:
         header = f"{BOLD}{base_header.rstrip()}{RESET}"
         separator_len = len(base_header.rstrip())
-    
+
     print(header)
     print("-" * separator_len)
 
     for wt in worktrees:
-        path = Path(wt['path'])
+        path = Path(wt["path"])
         name_display = path.name if path != base_dir else f"{CYAN}(main){RESET}"
         name_clean_len = len(path.name) if path != base_dir else 6
         name_padding = " " * (name_w - name_clean_len)
-        
-        branch = wt.get('branch', 'N/A')
-        rel_time = wt.get('relative_time', 'N/A')
-        changes_display = wt.get('changes_display', 'no changes')
-        changes_clean_len = wt.get('changes_clean_len', 1)
-        
+
+        branch = wt.get("branch", "N/A")
+        rel_time = wt.get("relative_time", "N/A")
+        changes_display = wt.get("changes_display", "no changes")
+        changes_clean_len = wt.get("changes_clean_len", 1)
+
         # ANSI コード分を補正して表示
         changes_padding = " " * (status_w - changes_clean_len)
-        
-        print(f"{name_display}{name_padding} {branch:<{branch_w}} {rel_time:<{time_w}} {changes_display}{changes_padding}", end='')
+
+        print(
+            f"{name_display}{name_padding} {branch:<{branch_w}} {rel_time:<{time_w}} {changes_display}{changes_padding}",
+            end="",
+        )
         if show_pr:
-             print(f"   {wt.get('pr_info', '')}", end='')
+            print(f"   {wt.get('pr_info', '')}", end="")
         print()
 
 
 def cmd_remove(args: list[str]):
     """wt rm/remove <work_name> - Remove a worktree"""
     if len(args) < 1:
-        print(msg('usage_rm'), file=sys.stderr)
+        print(msg("usage_rm"), file=sys.stderr)
         sys.exit(1)
 
     base_dir = find_base_dir()
     if not base_dir:
-        print(msg('error', msg('base_not_found')), file=sys.stderr)
+        print(msg("error", msg("base_not_found")), file=sys.stderr)
         sys.exit(1)
 
-    work_name = args[0]
+    # Parse flags and find worktree name
+    flags = []
+    work_name = None
+    for arg in args:
+        if arg in ["-f", "--force"]:
+            flags.append(arg)
+        elif not work_name:
+            work_name = arg
+        else:
+            # Additional non-flag arguments are currently ignored or could be treated as error
+            pass
+
+    if not work_name:
+        print(msg("usage_rm"), file=sys.stderr)
+        sys.exit(1)
 
     # worktree を削除
-    print(msg('removing_worktree', work_name), file=sys.stderr)
+    print(msg("removing_worktree", work_name), file=sys.stderr)
     result = run_command(
-        ["git", "worktree", "remove", work_name],
-        cwd=base_dir,
-        check=False
+        ["git", "worktree", "remove"] + flags + [work_name], cwd=base_dir, check=False
     )
 
     if result.returncode == 0:
@@ -1253,22 +1326,22 @@ def cmd_clean(args: list[str]):
     """wt clean - Remove old/unused/merged worktrees"""
     base_dir = find_base_dir()
     if not base_dir:
-        print(msg('error', msg('base_not_found')), file=sys.stderr)
+        print(msg("error", msg("base_not_found")), file=sys.stderr)
         sys.exit(1)
 
     # オプションを解析
     # オプションを解析
-    clean_all = '--all' in args
-    clean_merged = '--merged' in args
-    clean_closed = '--closed' in args
+    clean_all = "--all" in args
+    clean_merged = "--merged" in args
+    clean_closed = "--closed" in args
     days = None
 
     for i, arg in enumerate(args):
-        if arg == '--days' and i + 1 < len(args):
+        if arg == "--days" and i + 1 < len(args):
             try:
                 days = int(args[i + 1])
             except ValueError:
-                print(msg('error', 'Invalid days value'), file=sys.stderr)
+                print(msg("error", "Invalid days value"), file=sys.stderr)
                 sys.exit(1)
 
     # worktree 情報を取得
@@ -1288,38 +1361,53 @@ def cmd_clean(args: list[str]):
     # マージ済みブランチを取得
     merged_branches = set()
     merged_pr_branches = set()
-    
+
     # デフォルトブランチを取得して、それに対してマージされているかを確認
     default_branch = get_default_branch(base_dir)
     default_branch_sha = None
     if default_branch:
-        res_sha = run_command(["git", "rev-parse", default_branch], cwd=base_dir, check=False)
+        res_sha = run_command(
+            ["git", "rev-parse", default_branch], cwd=base_dir, check=False
+        )
         if res_sha.returncode == 0:
             default_branch_sha = res_sha.stdout.strip()
-            
+
     if clean_merged and default_branch:
         # Local merged branches (merged into default_branch)
-        result = run_command(["git", "branch", "--merged", default_branch], cwd=base_dir, check=False)
+        result = run_command(
+            ["git", "branch", "--merged", default_branch], cwd=base_dir, check=False
+        )
         if result.returncode == 0:
-            for line in result.stdout.split('\n'):
+            for line in result.stdout.split("\n"):
                 # Extract branch name, removing '*', '+', and whitespace
                 line = line.strip()
-                if line.startswith('* ') or line.startswith('+ '):
+                if line.startswith("* ") or line.startswith("+ "):
                     line = line[2:].strip()
                 if line:
                     merged_branches.add(line)
-        
+
         # GitHub merged PRs
         if shutil.which("gh"):
             import json
+
             # Get last 100 merged PRs
-            pr_cmd = ["gh", "pr", "list", "--state", "merged", "--limit", "100", "--json", "headRefName"]
+            pr_cmd = [
+                "gh",
+                "pr",
+                "list",
+                "--state",
+                "merged",
+                "--limit",
+                "100",
+                "--json",
+                "headRefName",
+            ]
             pr_res = run_command(pr_cmd, cwd=base_dir, check=False)
             if pr_res.returncode == 0:
                 try:
                     pr_data = json.loads(pr_res.stdout)
                     for pr in pr_data:
-                        merged_pr_branches.add(pr['headRefName'])
+                        merged_pr_branches.add(pr["headRefName"])
                 except:
                     pass
 
@@ -1328,14 +1416,25 @@ def cmd_clean(args: list[str]):
     if clean_closed:
         if shutil.which("gh"):
             import json
+
             # Get last 100 closed PRs
-            pr_cmd = ["gh", "pr", "list", "--state", "closed", "--limit", "100", "--json", "headRefName"]
+            pr_cmd = [
+                "gh",
+                "pr",
+                "list",
+                "--state",
+                "closed",
+                "--limit",
+                "100",
+                "--json",
+                "headRefName",
+            ]
             pr_res = run_command(pr_cmd, cwd=base_dir, check=False)
             if pr_res.returncode == 0:
                 try:
                     pr_data = json.loads(pr_res.stdout)
                     for pr in pr_data:
-                        closed_pr_branches.add(pr['headRefName'])
+                        closed_pr_branches.add(pr["headRefName"])
                 except:
                     pass
 
@@ -1344,7 +1443,7 @@ def cmd_clean(args: list[str]):
     now = datetime.now()
 
     for wt in worktrees:
-        path = Path(wt['path'])
+        path = Path(wt["path"])
 
         # base (git root) は除外
         if path == base_dir:
@@ -1356,28 +1455,33 @@ def cmd_clean(args: list[str]):
 
         reason = None
         # マージ済みの場合は無条件で対象（ただし dirty でないこと）
-        is_merged = (wt.get('branch') in merged_branches or wt.get('branch') in merged_pr_branches)
+        is_merged = (
+            wt.get("branch") in merged_branches
+            or wt.get("branch") in merged_pr_branches
+        )
         if clean_merged and is_merged:
             # Check safeguard: if branch points to same SHA as default branch and NOT in merged_pr_branches
             # it might be a new branch that hasn't diverged yet.
-            if default_branch_sha and wt.get('branch') not in merged_pr_branches:
-                wt_sha = run_command(["git", "rev-parse", wt.get('branch')], cwd=base_dir, check=False).stdout.strip()
+            if default_branch_sha and wt.get("branch") not in merged_pr_branches:
+                wt_sha = run_command(
+                    ["git", "rev-parse", wt.get("branch")], cwd=base_dir, check=False
+                ).stdout.strip()
                 if wt_sha == default_branch_sha:
                     # Skip deletion for fresh branches
                     continue
 
-            if wt.get('is_clean'):
+            if wt.get("is_clean"):
                 reason = "merged"
 
-        is_closed = wt.get('branch') in closed_pr_branches
+        is_closed = wt.get("branch") in closed_pr_branches
         if not reason and clean_closed and is_closed:
-            if wt.get('is_clean'):
+            if wt.get("is_clean"):
                 reason = "closed"
-        
+
         # 通常のクリーンアップ対象
-        if not reason and wt.get('is_clean'):
+        if not reason and wt.get("is_clean"):
             if days is not None:
-                created = wt.get('created')
+                created = wt.get("created")
                 if created:
                     age_days = (now - created).days
                     if age_days >= days:
@@ -1386,24 +1490,28 @@ def cmd_clean(args: list[str]):
                 reason = "clean"
 
         if reason:
-            wt['reason'] = reason
+            wt["reason"] = reason
             targets.append(wt)
 
     if not targets:
-        print(msg('no_clean_targets'), file=sys.stderr)
+        print(msg("no_clean_targets"), file=sys.stderr)
         return
 
     # 削除対象を表示
     for wt in targets:
-        path = Path(wt['path'])
-        created = wt.get('created').strftime('%Y-%m-%d %H:%M') if wt.get('created') else 'N/A'
-        print(f"{path.name} (reason: {wt['reason']}, created: {created})", file=sys.stderr)
+        path = Path(wt["path"])
+        created = (
+            wt.get("created").strftime("%Y-%m-%d %H:%M") if wt.get("created") else "N/A"
+        )
+        print(
+            f"{path.name} (reason: {wt['reason']}, created: {created})", file=sys.stderr
+        )
 
     # 確認
     if not clean_all:
         try:
-            response = input(msg('clean_confirm', len(targets)))
-            if response.lower() not in ['y', 'yes']:
+            response = input(msg("clean_confirm", len(targets)))
+            if response.lower() not in ["y", "yes"]:
                 print("Cancelled.")
                 return
         except (EOFError, KeyboardInterrupt):
@@ -1412,12 +1520,10 @@ def cmd_clean(args: list[str]):
 
     # 削除実行
     for wt in targets:
-        path = Path(wt['path'])
-        print(msg('removing_worktree', path.name), file=sys.stderr)
+        path = Path(wt["path"])
+        print(msg("removing_worktree", path.name), file=sys.stderr)
         result = run_command(
-            ["git", "worktree", "remove", str(path)],
-            cwd=base_dir,
-            check=False
+            ["git", "worktree", "remove", str(path)], cwd=base_dir, check=False
         )
 
         if result.returncode == 0:
@@ -1427,15 +1533,11 @@ def cmd_clean(args: list[str]):
                 print(result.stderr, file=sys.stderr)
 
 
-
-
-
-
 def cmd_sync(args: list[str]):
     """wt sync [files...] [--from <name>] [--to <name>] - Sync files between worktrees"""
     base_dir = find_base_dir()
     if not base_dir:
-        print(msg('error', msg('base_not_found')), file=sys.stderr)
+        print(msg("error", msg("base_not_found")), file=sys.stderr)
         sys.exit(1)
 
     config = load_config(base_dir)
@@ -1446,11 +1548,11 @@ def cmd_sync(args: list[str]):
     # 引数解析
     i = 0
     while i < len(args):
-        if args[i] == '--from' and i + 1 < len(args):
-            from_name = args[i+1]
+        if args[i] == "--from" and i + 1 < len(args):
+            from_name = args[i + 1]
             i += 2
-        elif args[i] == '--to' and i + 1 < len(args):
-            to_name = args[i+1]
+        elif args[i] == "--to" and i + 1 < len(args):
+            to_name = args[i + 1]
             i += 2
         else:
             files_to_sync.append(args[i])
@@ -1463,18 +1565,18 @@ def cmd_sync(args: list[str]):
         return
 
     worktrees = get_worktree_info(base_dir)
-    
+
     # 送信元と送信先のパスを決定
     from_path = base_dir
     if from_name:
         found = False
         for wt in worktrees:
-            if Path(wt['path']).name == from_name:
-                from_path = Path(wt['path'])
+            if Path(wt["path"]).name == from_name:
+                from_path = Path(wt["path"])
                 found = True
                 break
         if not found:
-            print(msg('error', f"Worktree not found: {from_name}"), file=sys.stderr)
+            print(msg("error", f"Worktree not found: {from_name}"), file=sys.stderr)
             sys.exit(1)
 
     dest_paths = []
@@ -1484,23 +1586,28 @@ def cmd_sync(args: list[str]):
         else:
             found = False
             for wt in worktrees:
-                if Path(wt['path']).name == to_name:
-                    dest_paths = [Path(wt['path'])]
+                if Path(wt["path"]).name == to_name:
+                    dest_paths = [Path(wt["path"])]
                     found = True
                     break
             if not found:
-                print(msg('error', f"Worktree not found: {to_name}"), file=sys.stderr)
+                print(msg("error", f"Worktree not found: {to_name}"), file=sys.stderr)
                 sys.exit(1)
     else:
         # 指定がない場合は現在のディレクトリが worktree ならそこへ、そうでなければ全自動（通常は base -> current）
         current_dir = Path.cwd()
-        if current_dir != base_dir and any(current_dir.is_relative_to(Path(wt['path'])) for wt in worktrees):
+        if current_dir != base_dir and any(
+            current_dir.is_relative_to(Path(wt["path"])) for wt in worktrees
+        ):
             dest_paths = [current_dir]
         else:
             # base から全 worktree へ（安全のため、ユーザーが現在の worktree にいる場合はそこだけにするのが一般的だが、ここでは全 worktree とした）
-            dest_paths = [Path(wt['path']) for wt in worktrees if Path(wt['path']) != base_dir]
+            dest_paths = [
+                Path(wt["path"]) for wt in worktrees if Path(wt["path"]) != base_dir
+            ]
 
     import shutil
+
     count = 0
     for dst_root in dest_paths:
         if dst_root == from_path:
@@ -1509,7 +1616,7 @@ def cmd_sync(args: list[str]):
             src = from_path / f
             dst = dst_root / f
             if src.exists():
-                print(msg('syncing', src, dst), file=sys.stderr)
+                print(msg("syncing", src, dst), file=sys.stderr)
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dst)
                 count += 1
@@ -1519,13 +1626,13 @@ def cmd_passthrough(args: list[str]):
     """Passthrough other git worktree commands"""
     base_dir = find_base_dir()
     if not base_dir:
-        print(msg('error', msg('base_not_found')), file=sys.stderr)
+        print(msg("error", msg("base_not_found")), file=sys.stderr)
         sys.exit(1)
 
     result = run_command(["git", "worktree"] + args, cwd=base_dir, check=False)
-    print(result.stdout, end='')
+    print(result.stdout, end="")
     if result.stderr:
-        print(result.stderr, end='', file=sys.stderr)
+        print(result.stderr, end="", file=sys.stderr)
     sys.exit(result.returncode)
 
 
@@ -1540,13 +1647,23 @@ def show_help():
         print("コマンド:")
         print(f"  {'clone <repository_url>':<55} - リポジトリをクローン")
         print(f"  {'init':<55} - 既存リポジトリをメインリポジトリとして構成")
-        print(f"  {'add (ad) <作業名> [<base_branch>]':<55} - worktree を追加（デフォルト: 新規ブランチ作成）")
+        print(
+            f"  {'add (ad) <作業名> [<base_branch>]':<55} - worktree を追加（デフォルト: 新規ブランチ作成）"
+        )
         print(f"  {'list (ls) [--pr]':<55} - worktree 一覧を表示")
-        print(f"  {'stash (st) <作業名> [<base_branch>]':<55} - 現在の変更をスタッシュして新規 worktree に移動")
-        print(f"  {'pr add <番号>':<55} - GitHub PR を取得して worktree を作成/パス表示")
-        print(f"  {'rm/remove <作業名>':<55} - worktree を削除")
-        print(f"  {'clean (cl) [--days N] [--merged] [--closed]':<55} - 不要な worktree を削除")
-        print(f"  {'sync (sy) [files...] [--from <名>] [--to <名>]':<55} - ファイル（.env等）を同期")
+        print(
+            f"  {'stash (st) <作業名> [<base_branch>]':<55} - 現在の変更をスタッシュして新規 worktree に移動"
+        )
+        print(
+            f"  {'pr add <番号>':<55} - GitHub PR を取得して worktree を作成/パス表示"
+        )
+        print(f"  {'rm/remove <作業名> [-f|--force]':<55} - worktree を削除")
+        print(
+            f"  {'clean (cl) [--days N] [--merged] [--closed]':<55} - 不要な worktree を削除"
+        )
+        print(
+            f"  {'sync (sy) [files...] [--from <名>] [--to <名>]':<55} - ファイル（.env等）を同期"
+        )
         print()
         print("オプション:")
         print(f"  {'-h, --help':<55} - このヘルプメッセージを表示")
@@ -1560,13 +1677,21 @@ def show_help():
         print("Commands:")
         print(f"  {'clone <repository_url>':<55} - Clone a repository")
         print(f"  {'init':<55} - Configure existing repository as main")
-        print(f"  {'add (ad) <work_name> [<base_branch>]':<55} - Add a worktree (default: create new branch)")
+        print(
+            f"  {'add (ad) <work_name> [<base_branch>]':<55} - Add a worktree (default: create new branch)"
+        )
         print(f"  {'list (ls) [--pr]':<55} - List worktrees")
-        print(f"  {'stash (st) <work_name> [<base_branch>]':<55} - Stash current changes and move to new worktree")
+        print(
+            f"  {'stash (st) <work_name> [<base_branch>]':<55} - Stash current changes and move to new worktree"
+        )
         print(f"  {'pr add <number>':<55} - Manage GitHub PRs as worktrees")
-        print(f"  {'rm/remove <work_name>':<55} - Remove a worktree")
-        print(f"  {'clean (cl) [--days N] [--merged] [--closed]':<55} - Remove unused/merged worktrees")
-        print(f"  {'sync (sy) [files...] [--from <name>] [--to <name>]':<55} - Sync files (.env, etc.)")
+        print(f"  {'rm/remove <work_name> [-f|--force]':<55} - Remove a worktree")
+        print(
+            f"  {'clean (cl) [--days N] [--merged] [--closed]':<55} - Remove unused/merged worktrees"
+        )
+        print(
+            f"  {'sync (sy) [files...] [--from <name>] [--to <name>]':<55} - Sync files (.env, etc.)"
+        )
         print()
         print("Options:")
         print(f"  {'-h, --help':<55} - Show this help message")
@@ -1575,7 +1700,7 @@ def show_help():
 
 def show_version():
     """Show version information"""
-    print("easy-worktree version 0.1.0")
+    print("easy-worktree version 0.1.1")
 
 
 def main():

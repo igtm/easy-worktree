@@ -8,8 +8,9 @@ from pathlib import Path
 import time
 
 # Add project root to path
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path.cwd()
 sys.path.insert(0, str(PROJECT_ROOT))
+
 
 class TestWtIntegration(unittest.TestCase):
     @classmethod
@@ -17,8 +18,10 @@ class TestWtIntegration(unittest.TestCase):
         # 'tmp/memo' is relative to PROJECT_ROOT in the workspace
         cls.source_repo = PROJECT_ROOT / "tmp" / "memo"
         if not cls.source_repo.exists():
-             raise RuntimeError(f"Source repo not found at {cls.source_repo}. Please clone it first.")
-             
+            raise RuntimeError(
+                f"Source repo not found at {cls.source_repo}. Please clone it first."
+            )
+
         # Create a playground directory for tests
         cls.test_dir = PROJECT_ROOT / "tests" / "playground"
         if cls.test_dir.exists():
@@ -35,16 +38,18 @@ class TestWtIntegration(unittest.TestCase):
         cmd = [sys.executable, str(script_path)] + args
         env = os.environ.copy()
         env["PYTHONPATH"] = str(PROJECT_ROOT)
-        # Mocking LANG to ensure english output and consistent message matching
+        # Mocking LANG etc to ensure english output and consistent message matching
         env["LANG"] = "en_US.UTF-8"
-        
+        env["LC_ALL"] = "en_US.UTF-8"
+        env["LANGUAGE"] = "en_US"
+
         try:
             result = subprocess.run(
-                cmd, 
+                cmd,
                 cwd=cwd or self.test_dir,
                 capture_output=True,
                 text=True,
-                input=input_str
+                input=input_str,
             )
             return result
         except Exception as e:
@@ -54,78 +59,79 @@ class TestWtIntegration(unittest.TestCase):
         """Test 'wt clone'"""
         repo_url = str(self.source_repo)
         repo_name = "memo-project"
-        
+
         print(f"\nTesting clone {repo_url} -> {repo_name}...")
         result = self.run_wt(["clone", repo_url, repo_name])
-        
+
         self.assertEqual(result.returncode, 0, f"Clone failed: {result.stderr}")
         self.assertIn("Cloning:", result.stderr)
-        
+
         # Verify directory structure
         project_dir = self.test_dir / repo_name
         self.assertTrue(project_dir.exists(), "Project directory not created")
-        
+
         # Verify .wt directory and config created
         self.assertTrue((project_dir / ".wt").exists(), ".wt directory not created")
-        self.assertTrue((project_dir / ".wt" / "config.toml").exists(), "config.toml not created")
+        self.assertTrue(
+            (project_dir / ".wt" / "config.toml").exists(), "config.toml not created"
+        )
 
     def test_02_add_and_config(self):
         """Test 'wt add' and Verify Config Customization"""
         project_dir = self.test_dir / "memo-project"
-        
+
         # Modify config.toml to change worktrees_dir
         config_file = project_dir / ".wt" / "config.toml"
-        with open(config_file, 'r') as f:
+        with open(config_file, "r") as f:
             config = toml.load(f)
-        
+
         config["worktrees_dir"] = ".custom_worktrees"
-        
-        with open(config_file, 'w') as f:
+
+        with open(config_file, "w") as f:
             toml.dump(config, f)
 
         print("\nTesting add feature-custom with custom config...")
         # wt add feature-custom
         result = self.run_wt(["add", "feature-custom"], cwd=project_dir)
-        
+
         self.assertEqual(result.returncode, 0, f"Add failed: {result.stderr}")
-        
+
         # Check if .custom_worktrees/feature-custom exists
         wt_dir = project_dir / ".custom_worktrees" / "feature-custom"
         self.assertTrue(wt_dir.exists(), "Custom Worktree directory not created")
-
 
     def test_04_sync(self):
         """Test 'wt sync'"""
         project_dir = self.test_dir / "memo-project"
         wt_dir = project_dir / ".custom_worktrees" / "feature-custom"
-        
+
         # Create a dummy file in base to sync
         # First ensure it's in config
         config_file = project_dir / ".wt" / "config.toml"
-        with open(config_file, 'r') as f:
+        with open(config_file, "r") as f:
             config = toml.load(f)
-            
+
         config["sync_files"] = ["test_sync.txt"]
-        
-        with open(config_file, 'w') as f:
+
+        with open(config_file, "w") as f:
             toml.dump(config, f)
-            
+
         # Create the file in base
         (project_dir / "test_sync.txt").write_text("sync me")
-        
+
         print("\nTesting sync...")
         # Ensure it doesn't exist in worktree yet
         self.assertFalse((wt_dir / "test_sync.txt").exists())
-        
+
         # Run sync
         result = self.run_wt(["sync"], cwd=project_dir)
         self.assertEqual(result.returncode, 0, f"Sync failed: {result.stderr}")
         self.assertEqual(result.returncode, 0)
-        
+
         # Verify it exists in worktree now
         self.assertTrue((wt_dir / "test_sync.txt").exists())
         self.assertEqual((wt_dir / "test_sync.txt").read_text(), "sync me")
-        
+
         # Cleanup: Remove the file to make worktree clean for test_08_rm
         # Or better commit it? Or just remove it.
         # Removing it might leave it as 'deleted' (dirty).
@@ -133,18 +139,17 @@ class TestWtIntegration(unittest.TestCase):
         subprocess.run(["git", "clean", "-fd"], cwd=wt_dir)
         subprocess.run(["git", "checkout", "."], cwd=wt_dir)
 
-
     def test_06_clean(self):
         """Test 'wt clean'"""
         project_dir = self.test_dir / "memo-project"
-        
+
         # Create another worktree to clean
         self.run_wt(["add", "temp-cleanup"], cwd=project_dir)
-        
+
         # Verify creation
         wt_dir = project_dir / ".custom_worktrees" / "temp-cleanup"
         self.assertTrue(wt_dir.exists())
-        
+
         # Ensure temp-cleanup is clean (hooks might have created untracked files)
         subprocess.run(["git", "clean", "-fdx"], cwd=wt_dir)
         subprocess.run(["git", "checkout", "."], cwd=wt_dir)
@@ -153,19 +158,19 @@ class TestWtIntegration(unittest.TestCase):
         feature_custom_dir = project_dir / ".custom_worktrees" / "feature-custom"
         if feature_custom_dir.exists():
             (feature_custom_dir / "dirty_file").write_text("dirty")
-        
+
         print("\nTesting clean --all...")
         # wt clean --all still asks for confirmation
         # We need to simulate merged or old worktrees to fully test clean logic, or force clean clean ones manually.
         # But 'clean' in `easy-worktree` implementation checks for 'is_clean' (git status).
         # We assume newly created worktree is clean.
-        
+
         # Note: In our current implementation, `wt clean --all` asks confirmation.
         result = self.run_wt(["clean", "--all"], cwd=project_dir, input_str="y\n")
-        
+
         self.assertEqual(result.returncode, 0, f"Clean failed: {result.stderr}")
         # Verify deletion
-        
+
         # Verify removal
         self.assertFalse(wt_dir.exists())
 
@@ -175,31 +180,31 @@ class TestWtIntegration(unittest.TestCase):
         init_test_dir = self.test_dir / "init-test"
         init_test_dir.mkdir()
         subprocess.run(["git", "init"], cwd=init_test_dir)
-        
+
         print("\nTesting init...")
         result = self.run_wt(["init"], cwd=init_test_dir)
         self.assertEqual(result.returncode, 0, f"Init failed: {result.stderr}")
         self.assertEqual(result.returncode, 0)
-        
+
         # Verify .wt created
         self.assertTrue((init_test_dir / ".wt").exists())
 
     def test_08_rm(self):
         """Test 'wt rm'"""
         project_dir = self.test_dir / "memo-project"
-        
+
         # We used 'feature-custom' in previous tests
         print("\nTesting rm feature-custom...")
-        
+
         wt_dir = project_dir / ".custom_worktrees" / "feature-custom"
         subprocess.run(["git", "clean", "-fdx"], cwd=wt_dir)
         subprocess.run(["git", "checkout", "."], cwd=wt_dir)
 
         result = self.run_wt(["rm", "feature-custom"], cwd=project_dir)
-        
+
         self.assertEqual(result.returncode, 0, f"Rm failed: {result.stderr}")
         self.assertEqual(result.returncode, 0)
-        
+
         wt_dir = project_dir / ".custom_worktrees" / "feature-custom"
         self.assertFalse(wt_dir.exists(), "Worktree directory still exists")
 
@@ -210,18 +215,18 @@ class TestWtIntegration(unittest.TestCase):
         if test_dir.exists():
             shutil.rmtree(test_dir)
         test_dir.mkdir()
-        
+
         # Init git repo
         subprocess.run(["git", "init"], cwd=test_dir)
-        
+
         # Create .gitignore
         (test_dir / ".gitignore").write_text("*.log\n")
-        
+
         print("\nTesting .gitignore update...")
         # Run wt init
         result = self.run_wt(["init"], cwd=test_dir)
         self.assertEqual(result.returncode, 0)
-        
+
         # Check .gitignore
         content = (test_dir / ".gitignore").read_text()
         self.assertIn(".worktrees/", content)
@@ -231,15 +236,15 @@ class TestWtIntegration(unittest.TestCase):
     def test_10_list_pr(self):
         """Test 'wt list --pr'"""
         project_dir = self.test_dir / "memo-project"
-        
+
         # Create a mock 'gh' command
         # This is a bit tricky since we run subprocess.
         # We can add a fake 'gh' script to the PATH.
-        
+
         bin_dir = self.test_dir / "bin"
         bin_dir.mkdir(exist_ok=True)
         gh_path = bin_dir / "gh"
-        
+
         script = """#!/bin/sh
 case "$*" in
     *"--head feature-with-pr"*)
@@ -264,11 +269,11 @@ esac
 """
         gh_path.write_text(script)
         gh_path.chmod(0o755)
-        
+
         # Add bin_dir to PATH
         original_env = os.environ.copy()
         os.environ["PATH"] = f"{bin_dir}:{os.environ['PATH']}"
-        
+
         try:
             # Ensure a clean state for the root so that auto-copied files don't make worktrees dirty
             for filename in ["test_sync.txt", "untracked.txt"]:
@@ -281,25 +286,29 @@ esac
             self.run_wt(["add", "feature-with-pr"], cwd=project_dir)
             self.run_wt(["add", "feature-merged"], cwd=project_dir)
             self.run_wt(["add", "feature-closed"], cwd=project_dir)
-            
+
             # Add a commit to each to make them "not merged" according to git
             for name in ["feature-with-pr", "feature-merged", "feature-closed"]:
                 wt_dir = project_dir / ".custom_worktrees" / name
                 if not wt_dir.exists():
                     raise RuntimeError(f"Worktree dir {wt_dir} does not exist.")
-                
+
                 (wt_dir / "commit.txt").write_text(f"commit for {name}")
                 subprocess.run(["git", "add", "commit.txt"], cwd=wt_dir, check=True)
-                subprocess.run(["git", "commit", "-m", f"Commit for {name}"], cwd=wt_dir, check=True)
+                subprocess.run(
+                    ["git", "commit", "-m", f"Commit for {name}"],
+                    cwd=wt_dir,
+                    check=True,
+                )
 
             result = self.run_wt(["list", "--pr"], cwd=project_dir)
             print(f"DEBUG: wt list --pr output:\n{result.stdout}")
-            
+
             # Check for symbols: ● (Open), ✔ (Merged), ✘ (Closed)
             self.assertIn("●", result.stdout, "Open PR symbol missing")
             self.assertIn("✔", result.stdout, "Merged PR symbol missing")
             self.assertIn("✘", result.stdout, "Closed PR symbol missing")
-            
+
             self.assertIn("#123", result.stdout)
             self.assertIn("#124", result.stdout)
             self.assertIn("#125", result.stdout)
@@ -307,12 +316,14 @@ esac
             print("Testing wt clean --merged using PR status...")
             # feature-merged should be removed, but feature-with-pr and feature-closed should stay
             # (feature-closed is not merged, just closed)
-            
+
             # Use 'n' to verify targets without deleting
-            clean_res = self.run_wt(["clean", "--merged"], cwd=project_dir, input_str="n\n")
+            clean_res = self.run_wt(
+                ["clean", "--merged"], cwd=project_dir, input_str="n\n"
+            )
             self.assertIn("feature-merged (reason: merged", clean_res.stderr)
             self.assertNotIn("feature-with-pr", clean_res.stderr)
-            
+
         finally:
             # Restore ENV
             os.environ.clear()
@@ -324,53 +335,57 @@ esac
         if test_dir.exists():
             shutil.rmtree(test_dir)
         test_dir.mkdir()
-        
+
         # Init git repo
         subprocess.run(["git", "init"], cwd=test_dir)
         (test_dir / "README.md").write_text("Hello")
         subprocess.run(["git", "add", "."], cwd=test_dir)
         subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=test_dir)
-        
+
         # Make it a wt-ready repo
         self.run_wt(["init"], cwd=test_dir)
-        
+
         # Commit .gitignore to avoid it being stashed
         subprocess.run(["git", "add", ".gitignore"], cwd=test_dir)
         subprocess.run(["git", "commit", "-m", "Add .gitignore"], cwd=test_dir)
-        
+
         # Add some changes
         (test_dir / "README.md").write_text("Modified")
         (test_dir / "untracked.txt").write_text("Untracked")
-        
+
         print("\nTesting wt stash...")
         result = self.run_wt(["stash", "feature-stash"], cwd=test_dir)
         if result.returncode != 0:
             print(f"Stash stdout: {result.stdout}")
         self.assertEqual(result.returncode, 0, f"Stash failed: {result.stderr}")
         self.assertEqual(result.returncode, 0)
-        
+
         # Check if new worktree exists
         stash_wt_dir = test_dir / ".worktrees" / "feature-stash"
         self.assertTrue(stash_wt_dir.exists())
-        
+
         # Check if changes are there
         self.assertEqual((stash_wt_dir / "README.md").read_text(), "Modified")
         self.assertEqual((stash_wt_dir / "untracked.txt").read_text(), "Untracked")
-        
-        # Check if original is clean
-        orig_status = subprocess.run(["git", "status", "--porcelain"], cwd=test_dir, capture_output=True, text=True)
-        self.assertEqual(orig_status.stdout.strip(), "")
 
+        # Check if original is clean
+        orig_status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=test_dir,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(orig_status.stdout.strip(), "")
 
     def test_13_pr(self):
         """Test 'wt pr add' and 'wt pr co'"""
         project_dir = self.test_dir / "memo-project"
-        
+
         # Prepare mock gh
         bin_dir = self.test_dir / "bin"
         bin_dir.mkdir(exist_ok=True)
         gh_path = bin_dir / "gh"
-        
+
         script = """#!/bin/sh
 if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
     echo '{"number": 999}'
@@ -378,15 +393,19 @@ fi
 """
         gh_path.write_text(script)
         gh_path.chmod(0o755)
-        
+
         # Prepare origin for fetch
-        subprocess.run(["git", "update-ref", "refs/pull/999/head", "HEAD"], cwd=project_dir)
-        subprocess.run(["git", "remote", "set-url", "origin", str(project_dir)], cwd=project_dir)
+        subprocess.run(
+            ["git", "update-ref", "refs/pull/999/head", "HEAD"], cwd=project_dir
+        )
+        subprocess.run(
+            ["git", "remote", "set-url", "origin", str(project_dir)], cwd=project_dir
+        )
 
         # Add bin_dir to PATH
         original_env = os.environ.copy()
         os.environ["PATH"] = f"{bin_dir}:{os.environ['PATH']}"
-        
+
         try:
             print("\nTesting wt pr add 999...")
             result = self.run_wt(["pr", "add", "999"], cwd=project_dir)
@@ -394,11 +413,11 @@ fi
                 print(f"PR Add STDOUT: {result.stdout}")
                 print(f"PR Add STDERR: {result.stderr}")
             self.assertEqual(result.returncode, 0)
-            
+
             # Check if pr@999 exists
             pr_wt_dir = project_dir / ".custom_worktrees" / "pr@999"
             self.assertTrue(pr_wt_dir.exists())
-            
+
         finally:
             # Restore ENV
             os.environ.clear()
@@ -409,44 +428,85 @@ fi
         clean_dir = self.test_dir / "clean-logic-test"
         if clean_dir.exists():
             import shutil
+
             shutil.rmtree(clean_dir)
         clean_dir.mkdir()
-        
+
         # Init main repo
-        subprocess.run(["git", "init", "-b", "main"], cwd=clean_dir, check=True, stdout=subprocess.DEVNULL)
-        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=clean_dir, check=True)
-        subprocess.run(["git", "config", "user.name", "Test User"], cwd=clean_dir, check=True)
+        subprocess.run(
+            ["git", "init", "-b", "main"],
+            cwd=clean_dir,
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"],
+            cwd=clean_dir,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test User"], cwd=clean_dir, check=True
+        )
         with open(clean_dir / "README.md", "w") as f:
             f.write("# Main")
-        subprocess.run(["git", "add", "."], cwd=clean_dir, check=True, stdout=subprocess.DEVNULL)
-        subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=clean_dir, check=True, stdout=subprocess.DEVNULL)
-        
+        subprocess.run(
+            ["git", "add", "."], cwd=clean_dir, check=True, stdout=subprocess.DEVNULL
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "Initial commit"],
+            cwd=clean_dir,
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
+
         # Init easy-worktree
         self.run_wt(["init"], cwd=clean_dir)
-        
+
         # 2. Add 'feature-merged' (merged into main)
         # Create branch, commit, merge
-        subprocess.run(["git", "checkout", "-b", "feature-merged"], cwd=clean_dir, check=True, stdout=subprocess.DEVNULL)
+        subprocess.run(
+            ["git", "checkout", "-b", "feature-merged"],
+            cwd=clean_dir,
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
         with open(clean_dir / "merged.txt", "w") as f:
             f.write("merged")
-        subprocess.run(["git", "add", "."], cwd=clean_dir, check=True, stdout=subprocess.DEVNULL)
-        subprocess.run(["git", "commit", "-m", "Feature merged"], cwd=clean_dir, check=True, stdout=subprocess.DEVNULL)
-        subprocess.run(["git", "checkout", "main"], cwd=clean_dir, check=True, stdout=subprocess.DEVNULL)
-        subprocess.run(["git", "merge", "--no-ff", "feature-merged"], cwd=clean_dir, check=True, stdout=subprocess.DEVNULL)
-        
+        subprocess.run(
+            ["git", "add", "."], cwd=clean_dir, check=True, stdout=subprocess.DEVNULL
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "Feature merged"],
+            cwd=clean_dir,
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            ["git", "checkout", "main"],
+            cwd=clean_dir,
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            ["git", "merge", "--no-ff", "feature-merged"],
+            cwd=clean_dir,
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
+
         # Add worktree for it
         self.run_wt(["add", "feature-merged", "feature-merged"], cwd=clean_dir)
-        
+
         # 3. Add 'feature-fresh' (new branch from main, no commits)
         self.run_wt(["add", "feature-fresh", "main"], cwd=clean_dir)
-        
+
         # 4. Clean with --merged
         # Expectation: feature-merged is listed (merged), feature-fresh is NOT (safeguard)
         # Using input_str="n\n" to cancel deletion, acting as check
         result = self.run_wt(["clean", "--merged"], cwd=clean_dir, input_str="n\n")
-        
+
         print(f"\nClean Output:\n{result.stderr}")
-        
+
         self.assertIn("feature-merged", result.stderr)
         self.assertNotIn("feature-fresh", result.stderr)
 
@@ -468,15 +528,15 @@ fi
         subprocess.run(["git", "add", "."], cwd=project_dir)
         subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=project_dir)
         self.run_wt(["init"], cwd=project_dir)
-        
+
         # Create worktrees with delay
         print("\nTesting wt list default sort...")
         self.run_wt(["add", "wt-old"], cwd=project_dir)
-        time.sleep(1.1) # Ensure different st_ctime
+        time.sleep(1.1)  # Ensure different st_ctime
         self.run_wt(["add", "wt-new"], cwd=project_dir)
-        
+
         result = self.run_wt(["list"], cwd=project_dir)
-        
+
         # Check order: wt-new should appear before wt-old
         lines = result.stdout.splitlines()
         # Find lines starting with worktree names
@@ -486,8 +546,56 @@ fi
                 names.append("wt-new")
             elif "wt-old" in line:
                 names.append("wt-old")
-        
-        self.assertEqual(names, ["wt-new", "wt-old"], f"Expected order [wt-new, wt-old], got {names}")
+
+        self.assertEqual(
+            names, ["wt-new", "wt-old"], f"Expected order [wt-new, wt-old], got {names}"
+        )
+
+    def test_15_rm_force(self):
+        """Test 'wt rm --force' with dirty worktree"""
+        project_dir = self.test_dir / "force-rm-test"
+        if project_dir.exists():
+            shutil.rmtree(project_dir)
+        project_dir.mkdir()
+        subprocess.run(["git", "init"], cwd=project_dir)
+        (project_dir / "README.md").write_text("Hello")
+        subprocess.run(["git", "add", "."], cwd=project_dir)
+        subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=project_dir)
+        self.run_wt(["init"], cwd=project_dir)
+
+        # Add worktree
+        print("\nTesting wt rm --force...")
+        self.run_wt(["add", "dirty-wt"], cwd=project_dir)
+        wt_dir = project_dir / ".worktrees" / "dirty-wt"
+
+        # Make it dirty
+        (wt_dir / "untracked.txt").write_text("untracked")
+
+        # Try rm without force (should fail)
+        result = self.run_wt(["rm", "dirty-wt"], cwd=project_dir)
+        self.assertNotEqual(
+            result.returncode, 0, "Remove should fail for dirty worktree"
+        )
+        self.assertTrue(wt_dir.exists(), "Worktree should still exist")
+
+        # Try rm with force (should succeed)
+        result = self.run_wt(["rm", "dirty-wt", "--force"], cwd=project_dir)
+        self.assertEqual(
+            result.returncode, 0, f"Remove with --force failed: {result.stderr}"
+        )
+        self.assertFalse(wt_dir.exists(), "Worktree should be removed")
+
+        # Try another worktree with -f at the beginning
+        self.run_wt(["add", "dirty-wt-2"], cwd=project_dir)
+        wt_dir_2 = project_dir / ".worktrees" / "dirty-wt-2"
+        (wt_dir_2 / "modified.txt").write_text("modified")
+
+        result = self.run_wt(["rm", "-f", "dirty-wt-2"], cwd=project_dir)
+        self.assertEqual(
+            result.returncode, 0, f"Remove with -f failed: {result.stderr}"
+        )
+        self.assertFalse(wt_dir_2.exists(), "Worktree 2 should be removed")
+
 
 if __name__ == "__main__":
     unittest.main()
