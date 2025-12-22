@@ -11,11 +11,11 @@ Git worktree を簡単に管理するための CLI ツール
 
 ### 主な特徴
 
-- **整理されたディレクトリ構成**: worktree は `.worktrees/` ディレクトリ（設定で変更可能）の下に作成されます。ルートディレクトリが散らかりません。
-- **自動同期**: `.env` などの git 管理外ファイルを、ルートから各 worktree へ自動的にコピー・同期できます。
+- **スマートな切り替え**: `wt select` で作業ディレクトリを瞬時に切り替え。特別な設定なしで新しいシェルとして「ジャンプ」できます。
+- **自動セットアップ**: `.env` などのファイルをルートから各 worktree へ自動的にコピー・初期化できます。
 - **わかりやすい一覧表示**: `wt list` で worktree の一覧、ブランチ、状態（clean/dirty）、GitHub PR 情報を美しく表示します。
 - **スマートなクリーンアップ**: マージ済みのブランチや古い worktree を簡単に削除できるようになります。
-- **2文字ショートカット**: `ad`, `ls`, `st`, `sy`, `cl` といった短いコマンドで素早く操作できます。
+- **2文字ショートカット**: `ad`, `ls`, `sl`, `su`, `st`, `cl` といった短いコマンドで素早く操作できます。
 
 ## 前提条件
 
@@ -99,6 +99,24 @@ wt ls --pr   # GitHub の PR 情報もあわせて表示
 wt stash feature-2
 ```
 
+#### ワークツリーを切り替える (ショートカット: `sl`)
+
+```bash
+wt select feature-1
+```
+
+`wt select` を実行すると、そのワークツリーのディレクトリへ**自動的に「ジャンプ」**します（新しいシェルが起動します）。
+
+- **プロンプト**: `(wt:feature-1)` のように表示されます。
+- **ターミナルタイトル**: ウィンドウのタイトル（ターミナルのタブ名など）が `wt:feature-1` に更新されます。
+- **Tmux**: tmux 内で実行している場合、ウィンドウ名が `wt:feature-1` に更新されます。
+
+元のディレクトリに戻りたい場合は `exit` を実行するか `Ctrl-D` を押してください。
+
+※ すでに `wt` のサブシェル内にいる状態で再度実行すると、ネストを警告するメッセージが表示されます。ネストを避けるには一度 `exit` してから切り替えることをお勧めします。
+
+引数なしで実行すると `fzf` によるインタラクティブな選択が可能です。
+
 #### PR 管理
 
 GitHub の PR を取得して worktree を作成します（`gh` CLI が必要です）。
@@ -117,12 +135,63 @@ wt rm feature-1
 
 ### 便利な機能
 
-#### 設定ファイルの同期 (ショートカット: `sy`)
+#### ワークツリーの初期化 (ショートカット: `su`)
 
-`.env` ファイルなどの git 管理外ファイルを、ルートから worktree に手動で同期します。
+`.env` ファイルなどのコピーや `post-add` フックの実行を、現在のワークツリーに対して行います。
 
 ```bash
-wt sync .env
+wt setup
+```
+
+#### 可視化と外部ツールとの連携
+
+`wt select` でワークツリーに切り替えた際、以下の機能が自動的に有効になります：
+- **ターミナルタイトル**: ウィンドウやタブのタイトルが `wt:ワークツリー名` に更新されます。
+- **Tmux**: tmux 内にいる場合、ウィンドウ名が自動的に `wt:ワークツリー名` に変更されます。
+
+また、`wt current` (または `cur`) コマンドを使って、外部ツールに現在のワークツリー情報を表示できます。
+
+##### Tmux ステータスバー
+`.tmux.conf` に以下を追加して、ステータスラインに常時表示できます。
+```tmux
+set -g status-right "#(wt current) | %Y-%m-%d %H:%M"
+```
+
+##### Zsh / Bash プロンプト
+環境変数 `$WT_SESSION_NAME` を利用してプロンプトをカスタマイズできます。
+
+**Zsh (.zshrc)**:
+```zsh
+RPROMPT='${WT_SESSION_NAME:+"(wt:$WT_SESSION_NAME)"} '"$RPROMPT"
+```
+
+**Bash (.bashrc)**:
+```bash
+PS1='$(if [ -n "$WT_SESSION_NAME" ]; then echo "($WT_SESSION_NAME) "; fi)'$PS1
+```
+
+##### Starship
+`starship.toml` にカスタムモジュールを追加します。
+```toml
+[custom.easy_worktree]
+command = "wt current"
+when = 'test -n "$WT_SESSION_NAME"'
+format = "via [$symbol$output]($style) "
+symbol = "🌳 "
+style = "bold green"
+```
+
+##### Powerlevel10k
+`.p10k.zsh` にカスタムセグメントを定義することで、綺麗に統合できます。
+
+1. `POWERLEVEL9K_LEFT_PROMPT_ELEMENTS` に `easy_worktree` を追加。
+2. 以下の関数を定義：
+```zsh
+function prompt_easy_worktree() {
+  if [[ -n $WT_SESSION_NAME ]]; then
+    p10k segment -f 255 -b 28 -i '🌳' -t "wt:$WT_SESSION_NAME"
+  fi
+}
 ```
 
 
@@ -141,7 +210,7 @@ wt clean --days 30
 
 ```toml
 worktrees_dir = ".worktrees"   # worktree を作成するディレクトリ名
-sync_files = [".env"]          # 自動同期するファイル一覧
+setup_files = [".env"]          # 自動セットアップでコピーするファイル一覧
 auto_copy_on_add = true        # wt add 時にファイルを自動コピーするか
 ```
 

@@ -39,14 +39,18 @@ class TestWtIntegration(unittest.TestCase):
         env = os.environ.copy()
         env["PYTHONPATH"] = str(PROJECT_ROOT)
         # Mocking LANG etc to ensure english output and consistent message matching
-        env["LANG"] = "en_US.UTF-8"
-        env["LC_ALL"] = "en_US.UTF-8"
-        env["LANGUAGE"] = "en_US"
+        env["LANG"] = "en"
+        env["LC_ALL"] = "C"
+        env["LANGUAGE"] = "en"
+        # Ensure test isolation from host environment
+        if "WT_SESSION_NAME" in env:
+            del env["WT_SESSION_NAME"]
 
         try:
             result = subprocess.run(
                 cmd,
                 cwd=cwd or self.test_dir,
+                env=env,
                 capture_output=True,
                 text=True,
                 input=input_str,
@@ -100,8 +104,8 @@ class TestWtIntegration(unittest.TestCase):
         wt_dir = project_dir / ".custom_worktrees" / "feature-custom"
         self.assertTrue(wt_dir.exists(), "Custom Worktree directory not created")
 
-    def test_04_sync(self):
-        """Test 'wt sync'"""
+    def test_04_setup(self):
+        """Test 'wt setup'"""
         project_dir = self.test_dir / "memo-project"
         wt_dir = project_dir / ".custom_worktrees" / "feature-custom"
 
@@ -111,31 +115,28 @@ class TestWtIntegration(unittest.TestCase):
         with open(config_file, "r") as f:
             config = toml.load(f)
 
-        config["sync_files"] = ["test_sync.txt"]
+        config["setup_files"] = ["test_setup.txt"]
 
         with open(config_file, "w") as f:
             toml.dump(config, f)
 
         # Create the file in base
-        (project_dir / "test_sync.txt").write_text("sync me")
+        (project_dir / "test_setup.txt").write_text("setup me")
 
-        print("\nTesting sync...")
+        print("\nTesting setup...")
         # Ensure it doesn't exist in worktree yet
-        self.assertFalse((wt_dir / "test_sync.txt").exists())
+        self.assertFalse((wt_dir / "test_setup.txt").exists())
 
-        # Run sync
-        result = self.run_wt(["sync"], cwd=project_dir)
-        self.assertEqual(result.returncode, 0, f"Sync failed: {result.stderr}")
+        # Run setup
+        result = self.run_wt(["setup"], cwd=wt_dir)
+        self.assertEqual(result.returncode, 0, f"Setup failed: {result.stderr}")
         self.assertEqual(result.returncode, 0)
 
         # Verify it exists in worktree now
-        self.assertTrue((wt_dir / "test_sync.txt").exists())
-        self.assertEqual((wt_dir / "test_sync.txt").read_text(), "sync me")
+        self.assertTrue((wt_dir / "test_setup.txt").exists())
+        self.assertEqual((wt_dir / "test_setup.txt").read_text(), "setup me")
 
         # Cleanup: Remove the file to make worktree clean for test_08_rm
-        # Or better commit it? Or just remove it.
-        # Removing it might leave it as 'deleted' (dirty).
-        # Best is to git clean -fd in the worktree.
         subprocess.run(["git", "clean", "-fd"], cwd=wt_dir)
         subprocess.run(["git", "checkout", "."], cwd=wt_dir)
 
@@ -300,6 +301,8 @@ esac
                     cwd=wt_dir,
                     check=True,
                 )
+                # Ensure it's clean (no untracked files from hooks etc)
+                subprocess.run(["git", "clean", "-fdx"], cwd=wt_dir, check=True)
 
             result = self.run_wt(["list", "--pr"], cwd=project_dir)
             print(f"DEBUG: wt list --pr output:\n{result.stdout}")
@@ -595,6 +598,38 @@ fi
             result.returncode, 0, f"Remove with -f failed: {result.stderr}"
         )
         self.assertFalse(wt_dir_2.exists(), "Worktree 2 should be removed")
+
+    def test_16_current(self):
+        """Test 'wt current'"""
+        project_dir = self.test_dir / "current-test"
+        if project_dir.exists():
+            shutil.rmtree(project_dir)
+        project_dir.mkdir()
+        subprocess.run(["git", "init"], cwd=project_dir)
+        (project_dir / "README.md").write_text("Hello")
+        subprocess.run(["git", "add", "."], cwd=project_dir)
+        subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=project_dir)
+        self.run_wt(["init"], cwd=project_dir)
+
+        # 1. Test in main project root
+        result = self.run_wt(["current"], cwd=project_dir)
+        self.assertEqual(result.stdout.strip(), "main", f"Stderr: {result.stderr}")
+
+        # 2. Test in a worktree
+        self.run_wt(["add", "feature-curr"], cwd=project_dir)
+        wt_dir = project_dir / ".worktrees" / "feature-curr"
+        
+        result = self.run_wt(["current"], cwd=wt_dir)
+        self.assertEqual(result.stdout.strip(), "feature-curr")
+
+        # 3. Test with environment variable (simulated subshell)
+        env = os.environ.copy()
+        env["WT_SESSION_NAME"] = "env-session"
+        script_path = PROJECT_ROOT / "easy_worktree" / "__init__.py"
+        cmd = [sys.executable, str(script_path), "current"]
+        env["PYTHONPATH"] = str(PROJECT_ROOT)
+        res = subprocess.run(cmd, cwd=project_dir, capture_output=True, text=True, env=env)
+        self.assertEqual(res.stdout.strip(), "env-session")
 
 
 if __name__ == "__main__":

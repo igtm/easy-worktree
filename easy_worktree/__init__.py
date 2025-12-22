@@ -131,13 +131,13 @@ MESSAGES = {
         "en": "Completed sync of {} files",
         "ja": "{} 個のファイルを同期しました",
     },
-    "usage_sync": {
-        "en": "Usage: wt sync (sy) [files...] [--from <name>] [--to <name>]",
-        "ja": "使用方法: wt sync (sy) [files...] [--from <name>] [--to <name>]",
-    },
     "usage_pr": {
         "en": "Usage: wt pr add <number>",
         "ja": "使用方法: wt pr add <number>",
+    },
+    "usage_setup": {
+        "en": "Usage: wt setup (su)",
+        "ja": "使用方法: wt setup (su)",
     },
     "usage_stash": {
         "en": "Usage: wt stash (st) <work_name> [<base_branch>]",
@@ -154,6 +154,35 @@ MESSAGES = {
     "nothing_to_stash": {
         "en": "No local changes to stash.",
         "ja": "スタッシュする変更がありません",
+    },
+    "select_switched": {
+        "en": "Switched worktree to: {}",
+        "ja": "作業ディレクトリを切り替えました: {}",
+    },
+    "select_not_found": {
+        "en": "Worktree not found: {}",
+        "ja": "worktree が見つかりません: {}",
+    },
+    "select_no_last": {
+        "en": "No previous selection found",
+        "ja": "以前の選択が見つかりません",
+    },
+    "setting_up": {"en": "Setting up: {} -> {}", "ja": "セットアップ中: {} -> {}"},
+    "completed_setup": {
+        "en": "Completed setup of {} files",
+        "ja": "{} 個のファイルをセットアップしました",
+    },
+    "suggest_setup": {
+        "en": "Some setup files are missing. Run 'wt setup' to initialize this worktree.",
+        "ja": "一部のセットアップファイルが不足しています。'wt setup' を実行して初期化してください。",
+    },
+    "nesting_error": {
+        "en": "Error: Already in a wt subshell ({}). Please 'exit' before switching.",
+        "ja": "エラー: すでに wt のサブシェル ({}) 内にいます。切り替える前に 'exit' してください。",
+    },
+    "jump_instruction": {
+        "en": "Jumping to '{}' ({}). Type 'exit' or Ctrl-D to return.",
+        "ja": "'{}' ({}) にジャンプします。戻るには 'exit' または Ctrl-D を入力してください。",
     },
 }
 
@@ -199,7 +228,7 @@ def load_config(base_dir: Path) -> dict:
     config_file = base_dir / ".wt" / "config.toml"
     default_config = {
         "worktrees_dir": ".worktrees",
-        "sync_files": [".env"],
+        "setup_files": [".env"],
         "auto_copy_on_add": True,
     }
 
@@ -238,7 +267,7 @@ def create_hook_template(base_dir: Path):
             base_dir,
             {
                 "worktrees_dir": ".worktrees",
-                "sync_files": [".env"],
+                "setup_files": [".env"],
                 "auto_copy_on_add": True,
             },
         )
@@ -330,9 +359,6 @@ wt add <作業名>
 # 既存ブランチから worktree を作成
 wt add <作業名> <既存ブランチ名>
 
-# エイリアスを作成（current エイリアスで現在の作業を切り替え）
-wt add <作業名> --alias current
-
 # worktree 一覧を表示
 wt list
 
@@ -341,31 +367,6 @@ wt rm <作業名>
 ```
 
 詳細は https://github.com/igtm/easy-worktree を参照してください。
-
-## エイリアスとは
-
-エイリアスは、worktree へのシンボリックリンク（symbolic link）です。同じエイリアス名で異なる worktree を指すことで、固定されたパスで複数のブランチを切り替えられます。
-
-### エイリアスの便利な使い方
-
-**VSCode ワークスペースでの活用**
-
-`current` などの固定エイリアスを VSCode のワークスペースとして開くことで、worktree を切り替えても VSCode を開き直す必要がなくなります。
-
-```bash
-# 最初の作業
-wt add feature-a --alias current
-code current  # VSCode で current を開く
-
-# 別の作業に切り替え（VSCode は開いたまま）
-wt add feature-b --alias current
-# current エイリアスが feature-b を指すようになる
-```
-
-このように、エイリアスを使うことで：
-- VSCode のワークスペース設定が維持される
-- 拡張機能の設定やウィンドウレイアウトが保持される
-- ブランチ切り替えのたびにエディタを開き直す手間が不要
 
 ## post-add フック
 
@@ -413,42 +414,14 @@ wt add <work_name>
 # Create a worktree from an existing branch
 wt add <work_name> <existing_branch_name>
 
-# Create an alias (use "current" alias to switch between tasks)
-wt add <work_name> --alias current
-
 # List worktrees
 wt list
 
 # Remove a worktree
-wt rm <work_name>
+wt remove <work_name>
 ```
 
 For more details, see https://github.com/igtm/easy-worktree
-
-## What are Aliases?
-
-Aliases are symbolic links to worktrees. By pointing the same alias name to different worktrees, you can switch between multiple branches using a fixed path.
-
-### Smart Use of Aliases
-
-**Using with VSCode Workspace**
-
-By opening a fixed alias like `current` as a VSCode workspace, you can switch worktrees without needing to reopen VSCode.
-
-```bash
-# First task
-wt add feature-a --alias current
-code current  # Open current in VSCode
-
-# Switch to another task (VSCode stays open)
-wt add feature-b --alias current
-# The current alias now points to feature-b
-```
-
-Benefits of using aliases:
-- VSCode workspace settings are preserved
-- Extension settings and window layouts are maintained
-- No need to reopen the editor when switching branches
 
 ## post-add Hook
 
@@ -480,6 +453,25 @@ The `post-add` hook is a script that runs automatically after creating a worktre
 
 def find_base_dir() -> Path | None:
     """現在のディレクトリまたは親ディレクトリから git root を探す"""
+    # ワークツリーでもメインリポジトリのルートを見つけられるように
+    try:
+        # --git-common-dir はメインリポジトリの .git ディレクトリを返す
+        result = run_command(["git", "rev-parse", "--git-common-dir"], check=False)
+        if result.returncode == 0:
+            git_common_dir = Path(result.stdout.strip())
+            if not git_common_dir.is_absolute():
+                # 相対パスの場合は CWD からのパス
+                git_common_dir = (Path.cwd() / git_common_dir).resolve()
+            
+            # .git ディレクトリの親がベースディレクトリ
+            if git_common_dir.name == ".git":
+                return git_common_dir.parent
+            else:
+                # ベアリポジトリなどの場合はそのディレクトリ自体
+                return git_common_dir
+    except Exception:
+        pass
+
     try:
         result = run_command(["git", "rev-parse", "--show-toplevel"], check=False)
         if result.returncode == 0:
@@ -487,7 +479,7 @@ def find_base_dir() -> Path | None:
     except Exception:
         pass
 
-    # git コマンドが失敗した場合、.git ディレクトリを探す
+    # fallback
     current = Path.cwd()
     for parent in [current] + list(current.parents):
         if (parent / ".git").exists():
@@ -786,12 +778,12 @@ def add_worktree(
     if result.returncode == 0:
         # 自動同期
         if config.get("auto_copy_on_add"):
-            sync_files = config.get("sync_files", [])
-            for file_name in sync_files:
+            setup_files = config.get("setup_files", [])
+            for file_name in setup_files:
                 src = base_dir / file_name
                 dst = worktree_path / file_name
                 if src.exists():
-                    print(msg("syncing", src, dst), file=sys.stderr)
+                    print(msg("setting_up", src, dst), file=sys.stderr)
                     import shutil
 
                     shutil.copy2(src, dst)
@@ -1322,6 +1314,242 @@ def cmd_remove(args: list[str]):
         sys.exit(1)
 
 
+def cmd_checkout(args: list[str]):
+    """wt co/checkout <work_name> - Get path to a worktree (for cd)"""
+    if len(args) < 1:
+        return
+
+    work_name = args[0]
+    base_dir = find_base_dir()
+    if not base_dir:
+        print(msg("error", msg("base_not_found")), file=sys.stderr)
+        sys.exit(1)
+
+    worktrees = get_worktree_info(base_dir)
+    for wt in worktrees:
+        p = Path(wt["path"])
+        if p.name == work_name or (p == base_dir and work_name == "main"):
+            print(str(p))
+            return
+
+    print(msg("error", msg("select_not_found", work_name)), file=sys.stderr)
+    sys.exit(1)
+
+
+def cmd_select(args: list[str]):
+    """wt sl/select [<name>|-] - Manage/Switch worktree selection"""
+    base_dir = find_base_dir()
+    if not base_dir:
+        print(msg("error", msg("base_not_found")), file=sys.stderr)
+        sys.exit(1)
+
+    wt_dir = base_dir / ".wt"
+    wt_dir.mkdir(exist_ok=True)
+    last_sel_file = wt_dir / "last_selection"
+
+    # Get current selection name based on CWD or environment
+    current_sel = os.environ.get("WT_SESSION_NAME")
+    if not current_sel:
+        cwd = Path.cwd().resolve()
+        worktrees = get_worktree_info(base_dir)
+        resolved_base = base_dir.resolve()
+        for wt in worktrees:
+            wt_path = Path(wt["path"]).resolve()
+            if cwd == wt_path or cwd.is_relative_to(wt_path):
+                current_sel = "main" if wt_path == resolved_base else wt_path.name
+                break
+
+    worktrees = get_worktree_info(base_dir)
+    names = []
+    for wt in worktrees:
+        p = Path(wt["path"])
+        name = "main" if p == base_dir else p.name
+        names.append(name)
+
+    if not args:
+        # Interactive mode or list with highlight
+        if shutil.which("fzf") and sys.stdin.isatty():
+            # Run fzf
+            try:
+                # Prepare input for fzf with current highlighted
+                fzf_input = ""
+                for name in names:
+                    if name == current_sel:
+                        fzf_input += f"{name} (*)\n"
+                    else:
+                        fzf_input += f"{name}\n"
+
+                process = subprocess.Popen(
+                    ["fzf", "--height", "40%", "--reverse", "--header", "Select Worktree"],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    text=True,
+                )
+                stdout, _ = process.communicate(input=fzf_input)
+
+                if process.returncode == 0 and stdout.strip():
+                    selected = stdout.strip().split(" ")[0]
+                    switch_selection(selected, base_dir, current_sel, last_sel_file)
+                return
+            except Exception as e:
+                print(f"fzf error: {e}", file=sys.stderr)
+                # Fallback to listing
+
+        # List with highlight
+        YELLOW = "\033[33m"
+        RESET = "\033[0m"
+        BOLD = "\033[1m"
+
+        for name in names:
+            if name == current_sel:
+                print(f"{YELLOW}{BOLD}{name}{RESET}")
+            else:
+                print(name)
+        return
+
+    target = args[0]
+
+    if target == "-":
+        if not last_sel_file.exists():
+            print(msg("error", msg("select_no_last")), file=sys.stderr)
+            sys.exit(1)
+        target = last_sel_file.read_text().strip()
+        if not target:
+            print(msg("error", msg("select_no_last")), file=sys.stderr)
+            sys.exit(1)
+
+    if target not in names:
+        print(msg("error", msg("select_not_found", target)), file=sys.stderr)
+        sys.exit(1)
+
+    switch_selection(target, base_dir, current_sel, last_sel_file)
+
+
+def cmd_current(args: list[str]):
+    """wt current (cur) - Show name of the current worktree"""
+    name = os.environ.get("WT_SESSION_NAME")
+    if not name:
+        base_dir = find_base_dir()
+        if not base_dir:
+            return
+        cwd = Path.cwd().resolve()
+        worktrees = get_worktree_info(base_dir)
+        resolved_base = base_dir.resolve()
+        for wt in worktrees:
+            wt_path = Path(wt["path"]).resolve()
+            if cwd == wt_path:
+                name = "main" if wt_path == resolved_base else wt_path.name
+                break
+    if name:
+        print(name)
+
+
+def switch_selection(target, base_dir, current_sel, last_sel_file):
+    """Switch selection and update last_selection"""
+    # Calculate target path
+    target_path = base_dir
+    if target != "main":
+        config = load_config(base_dir)
+        worktrees_dir_name = config.get("worktrees_dir", ".worktrees")
+        target_path = base_dir / worktrees_dir_name / target
+
+    if not target_path.exists():
+        print(msg("error", msg("select_not_found", target)), file=sys.stderr)
+        sys.exit(1)
+
+    if target != current_sel:
+        # Save last selection
+        if current_sel:
+            last_sel_file.write_text(current_sel)
+
+        print(msg("select_switched", target), file=sys.stderr)
+
+    # Check for setup files
+    config = load_config(base_dir)
+    setup_files = config.get("setup_files", [])
+    missing = False
+    for f in setup_files:
+        if not (target_path / f).exists():
+            missing = True
+            break
+    if missing:
+        print(f"\033[33m{msg('suggest_setup')}\033[0m", file=sys.stderr)
+
+    if sys.stdout.isatty():
+        # Check for nesting
+        current_session = os.environ.get("WT_SESSION_NAME")
+        if current_session:
+            print(
+                f"\033[31m{msg('nesting_error', current_session)}\033[0m", file=sys.stderr
+            )
+            sys.exit(1)
+
+        # Subshell jump
+        shell = os.environ.get("SHELL", "/bin/sh")
+        print(msg("jump_instruction", target, target_path), file=sys.stderr)
+
+        os.chdir(target_path)
+        os.environ["WT_SESSION_NAME"] = target
+        # Prepend to PS1 for visibility (if supported by shell)
+        ps1 = os.environ.get("PS1", "$ ")
+        if not ps1.startswith("(wt:"):
+            os.environ["PS1"] = f"(wt:{target}) {ps1}"
+
+        # Set terminal title
+        sys.stderr.write(f"\033]0;wt:{target}\007")
+        sys.stderr.flush()
+
+        # Update tmux window name if inside tmux
+        if os.environ.get("TMUX"):
+            subprocess.run(["tmux", "rename-window", f"wt:{target}"], check=False)
+
+        os.execl(shell, shell)
+    else:
+        # Output path for script/backtick use
+        print(str(target_path.absolute()))
+
+
+def cmd_setup(args: list[str]):
+    """wt setup - Initialize current worktree (copy setup_files and run hooks)"""
+    base_dir = find_base_dir()
+    if not base_dir:
+        print(msg("error", msg("base_not_found")), file=sys.stderr)
+        sys.exit(1)
+
+    current_dir = Path.cwd()
+    target_path = current_dir
+
+    config = load_config(base_dir)
+    setup_files = config.get("setup_files", [])
+
+    import shutil
+    count = 0
+    for f in setup_files:
+        src = base_dir / f
+        dst = target_path / f
+        if src.exists() and src != dst:
+            print(msg("setting_up", src, dst), file=sys.stderr)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            count += 1
+
+    if count > 0:
+        print(msg("completed_setup", count), file=sys.stderr)
+
+    # Run post-add hook
+    work_name = target_path.name
+    if target_path == base_dir:
+        work_name = "main"
+
+    # Get branch name for the current worktree
+    branch = None
+    result = run_command(["git", "branch", "--show-current"], cwd=target_path, check=False)
+    if result.returncode == 0:
+        branch = result.stdout.strip()
+
+    run_post_add_hook(target_path, work_name, base_dir, branch)
+
+
 def cmd_clean(args: list[str]):
     """wt clean - Remove old/unused/merged worktrees"""
     base_dir = find_base_dir()
@@ -1532,96 +1760,6 @@ def cmd_clean(args: list[str]):
             if result.stderr:
                 print(result.stderr, file=sys.stderr)
 
-
-def cmd_sync(args: list[str]):
-    """wt sync [files...] [--from <name>] [--to <name>] - Sync files between worktrees"""
-    base_dir = find_base_dir()
-    if not base_dir:
-        print(msg("error", msg("base_not_found")), file=sys.stderr)
-        sys.exit(1)
-
-    config = load_config(base_dir)
-    files_to_sync = []
-    from_name = None
-    to_name = None
-
-    # 引数解析
-    i = 0
-    while i < len(args):
-        if args[i] == "--from" and i + 1 < len(args):
-            from_name = args[i + 1]
-            i += 2
-        elif args[i] == "--to" and i + 1 < len(args):
-            to_name = args[i + 1]
-            i += 2
-        else:
-            files_to_sync.append(args[i])
-            i += 1
-
-    if not files_to_sync:
-        files_to_sync = config.get("sync_files", [])
-
-    if not files_to_sync:
-        return
-
-    worktrees = get_worktree_info(base_dir)
-
-    # 送信元と送信先のパスを決定
-    from_path = base_dir
-    if from_name:
-        found = False
-        for wt in worktrees:
-            if Path(wt["path"]).name == from_name:
-                from_path = Path(wt["path"])
-                found = True
-                break
-        if not found:
-            print(msg("error", f"Worktree not found: {from_name}"), file=sys.stderr)
-            sys.exit(1)
-
-    dest_paths = []
-    if to_name:
-        if to_name == "main":
-            dest_paths = [base_dir]
-        else:
-            found = False
-            for wt in worktrees:
-                if Path(wt["path"]).name == to_name:
-                    dest_paths = [Path(wt["path"])]
-                    found = True
-                    break
-            if not found:
-                print(msg("error", f"Worktree not found: {to_name}"), file=sys.stderr)
-                sys.exit(1)
-    else:
-        # 指定がない場合は現在のディレクトリが worktree ならそこへ、そうでなければ全自動（通常は base -> current）
-        current_dir = Path.cwd()
-        if current_dir != base_dir and any(
-            current_dir.is_relative_to(Path(wt["path"])) for wt in worktrees
-        ):
-            dest_paths = [current_dir]
-        else:
-            # base から全 worktree へ（安全のため、ユーザーが現在の worktree にいる場合はそこだけにするのが一般的だが、ここでは全 worktree とした）
-            dest_paths = [
-                Path(wt["path"]) for wt in worktrees if Path(wt["path"]) != base_dir
-            ]
-
-    import shutil
-
-    count = 0
-    for dst_root in dest_paths:
-        if dst_root == from_path:
-            continue
-        for f in files_to_sync:
-            src = from_path / f
-            dst = dst_root / f
-            if src.exists():
-                print(msg("syncing", src, dst), file=sys.stderr)
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src, dst)
-                count += 1
-
-
 def cmd_passthrough(args: list[str]):
     """Passthrough other git worktree commands"""
     base_dir = find_base_dir()
@@ -1650,7 +1788,12 @@ def show_help():
         print(
             f"  {'add (ad) <作業名> [<base_branch>]':<55} - worktree を追加（デフォルト: 新規ブランチ作成）"
         )
+        print(
+            f"  {'select (sl) [<作業名>|-]':<55} - 作業ディレクトリを切り替え（fzf対応）"
+        )
         print(f"  {'list (ls) [--pr]':<55} - worktree 一覧を表示")
+        print(f"  {'co/checkout <作業名>':<55} - worktree のパスを表示")
+        print(f"  {'current (cur)':<55} - 現在の worktree 名を表示")
         print(
             f"  {'stash (st) <作業名> [<base_branch>]':<55} - 現在の変更をスタッシュして新規 worktree に移動"
         )
@@ -1662,7 +1805,7 @@ def show_help():
             f"  {'clean (cl) [--days N] [--merged] [--closed]':<55} - 不要な worktree を削除"
         )
         print(
-            f"  {'sync (sy) [files...] [--from <名>] [--to <名>]':<55} - ファイル（.env等）を同期"
+            f"  {'setup (su)':<55} - 作業ディレクトリを初期化（ファイルコピー・フック実行）"
         )
         print()
         print("オプション:")
@@ -1680,7 +1823,12 @@ def show_help():
         print(
             f"  {'add (ad) <work_name> [<base_branch>]':<55} - Add a worktree (default: create new branch)"
         )
+        print(
+            f"  {'select (sl) [<name>|-]':<55} - Switch worktree selection (fzf support)"
+        )
         print(f"  {'list (ls) [--pr]':<55} - List worktrees")
+        print(f"  {'co/checkout <work_name>':<55} - Show path to a worktree")
+        print(f"  {'current (cur)':<55} - Show current worktree name")
         print(
             f"  {'stash (st) <work_name> [<base_branch>]':<55} - Stash current changes and move to new worktree"
         )
@@ -1690,7 +1838,7 @@ def show_help():
             f"  {'clean (cl) [--days N] [--merged] [--closed]':<55} - Remove unused/merged worktrees"
         )
         print(
-            f"  {'sync (sy) [files...] [--from <name>] [--to <name>]':<55} - Sync files (.env, etc.)"
+            f"  {'setup (su)':<55} - Setup worktree (copy files and run hooks)"
         )
         print()
         print("Options:")
@@ -1735,12 +1883,18 @@ def main():
         cmd_remove(args)
     elif command in ["clean", "cl"]:
         cmd_clean(args)
-    elif command in ["sync", "sy"]:
-        cmd_sync(args)
+    elif command in ["setup", "su"]:
+        cmd_setup(args)
     elif command in ["stash", "st"]:
         cmd_stash(args)
     elif command == "pr":
         cmd_pr(args)
+    elif command == "select" or command == "sl":
+        cmd_select(args)
+    elif command in ["current", "cur"]:
+        cmd_current(args)
+    elif command in ["co", "checkout"]:
+        cmd_checkout(args)
     else:
         # その他のコマンドは git worktree にパススルー
         cmd_passthrough([command] + args)
