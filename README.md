@@ -85,6 +85,14 @@ You can also specify a base branch:
 wt add feature-1 main
 ```
 
+#### Skip Setup
+
+If you want to create a worktree without running the automatic setup (file copy and hooks):
+
+```bash
+wt add feature-1 --skip-setup
+```
+
 #### List worktrees
 
 ```bash
@@ -213,8 +221,11 @@ Customize behavior in `.wt/config.toml`:
 ```toml
 worktrees_dir = ".worktrees"   # Directory where worktrees are created
 setup_files = [".env"]          # Files to auto-copy during setup
-auto_copy_on_add = true         # Enable auto-copy on worktree creation
 ```
+
+#### Local Configuration Override
+
+You can create `.wt/config.local.toml` to override settings locally. This file is automatically added to `.gitignore` and ignores `config.toml` settings.
 
 ## Hooks
 

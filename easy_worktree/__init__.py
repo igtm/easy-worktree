@@ -226,10 +226,11 @@ def get_repository_name(url: str) -> str:
 def load_config(base_dir: Path) -> dict:
     """設定ファイルを読み込む"""
     config_file = base_dir / ".wt" / "config.toml"
+    local_config_file = base_dir / ".wt" / "config.local.toml"
+    
     default_config = {
         "worktrees_dir": ".worktrees",
         "setup_files": [".env"],
-        "auto_copy_on_add": True,
     }
 
     if config_file.exists():
@@ -239,6 +240,14 @@ def load_config(base_dir: Path) -> dict:
                 default_config.update(user_config)
         except Exception as e:
             print(msg("error", f"Failed to load config: {e}"), file=sys.stderr)
+
+    if local_config_file.exists():
+        try:
+            with open(local_config_file, "r", encoding="utf-8") as f:
+                local_config = toml.load(f)
+                default_config.update(local_config)
+        except Exception as e:
+            print(msg("error", f"Failed to load local config: {e}"), file=sys.stderr)
 
     return default_config
 
@@ -268,7 +277,6 @@ def create_hook_template(base_dir: Path):
             {
                 "worktrees_dir": ".worktrees",
                 "setup_files": [".env"],
-                "auto_copy_on_add": True,
             },
         )
 
@@ -331,9 +339,24 @@ def create_hook_template(base_dir: Path):
 
     # .gitignore
     gitignore_file = wt_dir / ".gitignore"
+    
+    ignores = ["post-add.local", "config.local.toml"]
+    
     if not gitignore_file.exists():
-        gitignore_content = "post-add.local\n"
+        gitignore_content = "\n".join(ignores) + "\n"
         gitignore_file.write_text(gitignore_content)
+    else:
+        content = gitignore_file.read_text()
+        updated = False
+        for ignore in ignores:
+            if ignore not in content:
+                if content and not content.endswith("\n"):
+                    content += "\n"
+                content += f"{ignore}\n"
+                updated = True
+        if updated:
+            gitignore_file.write_text(content)
+
 
     # README.md (言語に応じて)
     readme_file = wt_dir / "README.md"
@@ -356,6 +379,9 @@ wt clone <repository_url>
 # 新しい worktree を作成（新規ブランチ）
 wt add <作業名>
 
+# セットアップ（フック実行など）をスキップして作成
+wt add <作業名> --skip-setup
+
 # 既存ブランチから worktree を作成
 wt add <作業名> <既存ブランチ名>
 
@@ -367,6 +393,19 @@ wt rm <作業名>
 ```
 
 詳細は https://github.com/igtm/easy-worktree を参照してください。
+
+## 設定 (config.toml)
+
+`.wt/config.toml` で以下の設定が可能です。
+
+```toml
+worktrees_dir = ".worktrees"   # worktree を作成するディレクトリ名
+setup_files = [".env"]          # 自動セットアップでコピーするファイル一覧
+```
+
+### ローカル設定 (config.local.toml)
+
+`config.local.toml` を作成すると、設定をローカルでのみ上書きできます。このファイルは自動的に `.gitignore` に追加され、リポジトリにはコミットされません。
 
 ## post-add フック
 
@@ -411,6 +450,9 @@ wt clone <repository_url>
 # Create a new worktree (new branch)
 wt add <work_name>
 
+# Skip setup (hook execution etc)
+wt add <work_name> --skip-setup
+
 # Create a worktree from an existing branch
 wt add <work_name> <existing_branch_name>
 
@@ -422,6 +464,19 @@ wt remove <work_name>
 ```
 
 For more details, see https://github.com/igtm/easy-worktree
+
+## Configuration (config.toml)
+
+You can customize behavior in `.wt/config.toml`:
+
+```toml
+worktrees_dir = ".worktrees"   # Directory where worktrees are created
+setup_files = [".env"]          # Files to auto-copy during setup
+```
+
+### Local Configuration (config.local.toml)
+
+You can create `config.local.toml` to override settings locally. This file is automatically added to `.gitignore` and serves as a local override that won't be committed.
 
 ## post-add Hook
 
@@ -607,6 +662,7 @@ def add_worktree(
     branch_to_use: str = None,
     new_branch_base: str = None,
     base_dir: Path = None,
+    skip_setup: bool = False,
 ) -> Path:
     """Core logic to add a worktree, reused by cmd_add and cmd_stash"""
     if not base_dir:
@@ -616,24 +672,24 @@ def add_worktree(
         print(msg("run_in_wt_dir"), file=sys.stderr)
         sys.exit(1)
 
-    # 設定を読み込む
+    # settings loading
     config = load_config(base_dir)
     worktrees_dir_name = config.get("worktrees_dir", ".worktrees")
     worktrees_dir = base_dir / worktrees_dir_name
     worktrees_dir.mkdir(exist_ok=True)
 
-    # worktree のパスを決定
+    # worktree path decision
     worktree_path = worktrees_dir / work_name
 
     if worktree_path.exists():
         print(msg("error", msg("already_exists", worktree_path)), file=sys.stderr)
         sys.exit(1)
 
-    # ブランチを最新に更新
+    # update branch
     print(msg("fetching"), file=sys.stderr)
     run_command(["git", "fetch", "--all"], cwd=base_dir)
 
-    # 本体 (main) を base branch の最新に更新
+    # main update to base branch latest
     result = run_command(
         ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=base_dir, check=False
     )
@@ -649,10 +705,10 @@ def add_worktree(
                 ["git", "pull", "origin", current_branch], cwd=base_dir, check=False
             )
 
-    # ブランチ作成/チェックアウト
+    # create branch / checkout
     final_branch_name = None
     if new_branch_base:
-        # 新しいブランチをベースから作成
+        # create new branch from base
         final_branch_name = work_name
         print(
             msg("creating_branch", final_branch_name, new_branch_base), file=sys.stderr
@@ -671,7 +727,7 @@ def add_worktree(
             check=False,
         )
     elif branch_to_use:
-        # 指定されたブランチをチェックアウト
+        # checkout specified branch
         final_branch_name = branch_to_use
         print(msg("creating_worktree", worktree_path), file=sys.stderr)
         result = run_command(
@@ -680,8 +736,8 @@ def add_worktree(
             check=False,
         )
     else:
-        # 自動判定
-        # ブランチ名として work_name を使用
+        # auto detect
+        # use work_name as branch name
         final_branch_name = work_name
 
         check_local = run_command(
@@ -717,7 +773,7 @@ def add_worktree(
                     check=False,
                 )
         else:
-            # デフォルトブランチを探す
+            # find default branch
             result_sym = run_command(
                 ["git", "symbolic-ref", "refs/remotes/origin/HEAD", "--short"],
                 cwd=base_dir,
@@ -728,7 +784,7 @@ def add_worktree(
             if result_sym.returncode == 0 and result_sym.stdout.strip():
                 detected_base = result_sym.stdout.strip()
             else:
-                # remote/local main/master の順に探す
+                # search in order: remote/local main/master
                 for b in ["origin/main", "origin/master", "main", "master"]:
                     if (
                         run_command(
@@ -742,7 +798,7 @@ def add_worktree(
                         break
 
                 if not detected_base:
-                    # 最終手段として現在のブランチを使用
+                    # fallback to current branch
                     res_curr = run_command(
                         ["git", "rev-parse", "--abbrev-ref", "HEAD"],
                         cwd=base_dir,
@@ -776,8 +832,8 @@ def add_worktree(
             )
 
     if result.returncode == 0:
-        # 自動同期
-        if config.get("auto_copy_on_add"):
+        if not skip_setup:
+            # automatic sync
             setup_files = config.get("setup_files", [])
             for file_name in setup_files:
                 src = base_dir / file_name
@@ -788,8 +844,9 @@ def add_worktree(
 
                     shutil.copy2(src, dst)
 
-        # post-add hook
-        run_post_add_hook(worktree_path, work_name, base_dir, final_branch_name)
+            # post-add hook
+            run_post_add_hook(worktree_path, work_name, base_dir, final_branch_name)
+        
         return worktree_path
     else:
         if result.stderr:
@@ -798,15 +855,29 @@ def add_worktree(
 
 
 def cmd_add(args: list[str]):
-    """wt add <work_name> [<base_branch>] - Add a worktree"""
+    """wt add <work_name> [<base_branch>] [--skip-setup] - Add a worktree"""
     if len(args) < 1:
         print(msg("usage_add"), file=sys.stderr)
         sys.exit(1)
 
-    work_name = args[0]
-    branch_to_use = args[1] if len(args) >= 2 else None
+    # parse options
+    clean_args = []
+    skip_setup = False
+    
+    for arg in args:
+        if arg == "--skip-setup":
+            skip_setup = True
+        else:
+            clean_args.append(arg)
+            
+    if not clean_args:
+        print(msg("usage_add"), file=sys.stderr)
+        sys.exit(1)
 
-    add_worktree(work_name, branch_to_use=branch_to_use)
+    work_name = clean_args[0]
+    branch_to_use = clean_args[1] if len(clean_args) >= 2 else None
+
+    add_worktree(work_name, branch_to_use=branch_to_use, skip_setup=skip_setup)
 
 
 def cmd_stash(args: list[str]):

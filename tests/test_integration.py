@@ -632,5 +632,105 @@ fi
         self.assertEqual(res.stdout.strip(), "env-session")
 
 
+    def test_17_skip_setup(self):
+        """Test 'wt add --skip-setup'"""
+        project_dir = self.test_dir / "skip-setup-test"
+        if project_dir.exists():
+            shutil.rmtree(project_dir)
+        project_dir.mkdir()
+        subprocess.run(["git", "init"], cwd=project_dir)
+        (project_dir / "README.md").write_text("Hello")
+        subprocess.run(["git", "add", "."], cwd=project_dir)
+        subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=project_dir)
+        self.run_wt(["init"], cwd=project_dir)
+
+        # Config setup files
+        config_file = project_dir / ".wt" / "config.toml"
+        # We need to make sure config exists (init creates it)
+        with open(config_file, "r") as f:
+            config = toml.load(f)
+        config["setup_files"] = ["setup_me.txt"]
+        with open(config_file, "w") as f:
+            toml.dump(config, f)
+
+        # Create the setup file
+        (project_dir / "setup_me.txt").write_text("setup content")
+
+        # Create post-add hook that creates a file
+        hook_path = project_dir / ".wt" / "post-add"
+        hook_path.write_text("""#!/bin/sh
+touch hook_ran.txt
+""")
+        hook_path.chmod(0o755)
+
+        print("\nTesting wt add --skip-setup...")
+        self.run_wt(["add", "wt-skipped", "--skip-setup"], cwd=project_dir)
+        
+        wt_dir = project_dir / ".worktrees" / "wt-skipped"
+        
+        # Verify setup file NOT copied
+        self.assertFalse((wt_dir / "setup_me.txt").exists(), "Setup file should NOT be copied")
+        
+        # Verify hook NOT ran
+        self.assertFalse((wt_dir / "hook_ran.txt").exists(), "Hook should NOT run")
+
+        print("\nTesting wt add WITHOUT --skip-setup (control)...")
+        self.run_wt(["add", "wt-normal"], cwd=project_dir)
+        wt_normal_dir = project_dir / ".worktrees" / "wt-normal"
+        
+        # Verify setup file copied
+        self.assertTrue((wt_normal_dir / "setup_me.txt").exists(), "Setup file SHOULD be copied")
+        
+        # Verify hook ran
+        self.assertTrue((wt_normal_dir / "hook_ran.txt").exists(), "Hook SHOULD run")
+
+
+    def test_18_config_local(self):
+        """Test 'config.local.toml' priority and .gitignore update"""
+        project_dir = self.test_dir / "local-config-test"
+        if project_dir.exists():
+            shutil.rmtree(project_dir)
+        project_dir.mkdir()
+        subprocess.run(["git", "init"], cwd=project_dir)
+        (project_dir / "README.md").write_text("Hello")
+        subprocess.run(["git", "add", "."], cwd=project_dir)
+        subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=project_dir)
+        self.run_wt(["init"], cwd=project_dir)
+
+        # 1. Verify .wt/.gitignore contains config.local.toml
+        wt_gitignore = project_dir / ".wt" / ".gitignore"
+        self.assertTrue(wt_gitignore.exists())
+        self.assertIn("config.local.toml", wt_gitignore.read_text())
+
+        # 2. Config setup files basic
+        config_file = project_dir / ".wt" / "config.toml"
+        with open(config_file, "r") as f:
+            config = toml.load(f)
+        config["setup_files"] = ["base.txt"]
+        with open(config_file, "w") as f:
+            toml.dump(config, f)
+
+        # 3. Create overrides in config.local.toml
+        local_config_file = project_dir / ".wt" / "config.local.toml"
+        local_config_data = {
+            "setup_files": ["local.txt"]
+        }
+        with open(local_config_file, "w") as f:
+            toml.dump(local_config_data, f)
+            
+        # Create files
+        (project_dir / "base.txt").write_text("base")
+        (project_dir / "local.txt").write_text("local")
+
+        # 4. Run add (should use local.txt, NOT base.txt due to override)
+        print("\nTesting wt add with config.local.toml override...")
+        self.run_wt(["add", "wt-local"], cwd=project_dir)
+        
+        wt_dir = project_dir / ".worktrees" / "wt-local"
+        
+        self.assertTrue((wt_dir / "local.txt").exists(), "Should have copied local.txt from config.local.toml")
+        self.assertFalse((wt_dir / "base.txt").exists(), "Should NOT have copied base.txt (overridden)")
+
+
 if __name__ == "__main__":
     unittest.main()

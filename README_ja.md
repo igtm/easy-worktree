@@ -83,6 +83,14 @@ my-repo/ (main)
 wt add feature-1 main
 ```
 
+#### セットアップをスキップする
+
+自動セットアップ（ファイルのコピーや hook の実行）を行わずに worktree を作成したい場合は、`--skip-setup` フラグを使用します：
+
+```bash
+wt add feature-1 --skip-setup
+```
+
 #### 一覧を表示 (ショートカット: `ls`)
 
 ```bash
@@ -211,8 +219,11 @@ wt clean --days 30
 ```toml
 worktrees_dir = ".worktrees"   # worktree を作成するディレクトリ名
 setup_files = [".env"]          # 自動セットアップでコピーするファイル一覧
-auto_copy_on_add = true        # wt add 時にファイルを自動コピーするか
 ```
+
+#### ローカル設定の上書き
+
+`.wt/config.local.toml` を作成すると、設定をローカルでのみ上書きできます。このファイルは自動的に `.gitignore` に追加され、リポジトリにはコミットされません。
 
 ## Hook
 
