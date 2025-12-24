@@ -732,5 +732,35 @@ touch hook_ran.txt
         self.assertFalse((wt_dir / "base.txt").exists(), "Should NOT have copied base.txt (overridden)")
 
 
+    def test_19_wt_gitignore_last_selection(self):
+        """Test if .wt/.gitignore contains last_selection after wt select"""
+        project_dir = self.test_dir / "wt-gitignore-test"
+        if project_dir.exists():
+            shutil.rmtree(project_dir)
+        project_dir.mkdir()
+        subprocess.run(["git", "init"], cwd=project_dir)
+        (project_dir / "README.md").write_text("Hello")
+        subprocess.run(["git", "add", "."], cwd=project_dir)
+        subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=project_dir)
+        
+        # wt init
+        self.run_wt(["init"], cwd=project_dir)
+        
+        # Verify .wt/.gitignore exists and contains last_selection
+        wt_gitignore = project_dir / ".wt" / ".gitignore"
+        self.assertTrue(wt_gitignore.exists())
+        self.assertIn("last_selection", wt_gitignore.read_text())
+        
+        # Test wt select also triggers it (though init already does)
+        # Remove .wt to test re-creation/initialization by select
+        shutil.rmtree(project_dir / ".wt")
+        self.assertFalse((project_dir / ".wt").exists())
+        
+        # Run wt select main
+        self.run_wt(["select", "main"], cwd=project_dir)
+        
+        self.assertTrue(wt_gitignore.exists())
+        self.assertIn("last_selection", wt_gitignore.read_text())
+
 if __name__ == "__main__":
     unittest.main()

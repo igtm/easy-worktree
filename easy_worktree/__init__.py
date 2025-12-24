@@ -340,7 +340,7 @@ def create_hook_template(base_dir: Path):
     # .gitignore
     gitignore_file = wt_dir / ".gitignore"
     
-    ignores = ["post-add.local", "config.local.toml"]
+    ignores = ["post-add.local", "config.local.toml", "last_selection"]
     
     if not gitignore_file.exists():
         gitignore_content = "\n".join(ignores) + "\n"
@@ -1415,7 +1415,8 @@ def cmd_select(args: list[str]):
         sys.exit(1)
 
     wt_dir = base_dir / ".wt"
-    wt_dir.mkdir(exist_ok=True)
+    # Ensure .wt directory and its management files (.gitignore etc) exist
+    create_hook_template(base_dir)
     last_sel_file = wt_dir / "last_selection"
 
     # Get current selection name based on CWD or environment
