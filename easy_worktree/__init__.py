@@ -28,8 +28,8 @@ MESSAGES = {
         "ja": "使用方法: wt clone <repository_url>",
     },
     "usage_add": {
-        "en": "Usage: wt add (ad) <work_name> [<base_branch>]",
-        "ja": "使用方法: wt add (ad) <作業名> [<base_branch>]",
+        "en": "Usage: wt add (ad) <work_name> [<base_branch>] [--no-setup] [--select]",
+        "ja": "使用方法: wt add (ad) <作業名> [<base_branch>] [--no-setup] [--select]",
     },
     "usage_rm": {"en": "Usage: wt rm <work_name>", "ja": "使用方法: wt rm <作業名>"},
     "base_not_found": {
@@ -855,7 +855,7 @@ def add_worktree(
 
 
 def cmd_add(args: list[str]):
-    """wt add <work_name> [<base_branch>] [--skip-setup] - Add a worktree"""
+    """wt add <work_name> [<base_branch>] [--no-setup] [--select] - Add a worktree"""
     if len(args) < 1:
         print(msg("usage_add"), file=sys.stderr)
         sys.exit(1)
@@ -863,10 +863,13 @@ def cmd_add(args: list[str]):
     # parse options
     clean_args = []
     skip_setup = False
+    select = False
     
     for arg in args:
-        if arg == "--skip-setup":
+        if arg in ["--skip-setup", "--no-setup"]:
             skip_setup = True
+        elif arg == "--select":
+            select = True
         else:
             clean_args.append(arg)
             
@@ -877,7 +880,28 @@ def cmd_add(args: list[str]):
     work_name = clean_args[0]
     branch_to_use = clean_args[1] if len(clean_args) >= 2 else None
 
-    add_worktree(work_name, branch_to_use=branch_to_use, skip_setup=skip_setup)
+    base_dir = find_base_dir()
+    wt_path = add_worktree(work_name, branch_to_use=branch_to_use, skip_setup=skip_setup, base_dir=base_dir)
+
+    if select and wt_path:
+        wt_dir = base_dir / ".wt"
+        # Ensure .wt directory and its management files exists
+        create_hook_template(base_dir)
+        last_sel_file = wt_dir / "last_selection"
+        
+        # Get current selection name
+        current_sel = os.environ.get("WT_SESSION_NAME")
+        if not current_sel:
+            cwd = Path.cwd().resolve()
+            worktrees = get_worktree_info(base_dir)
+            resolved_base = base_dir.resolve()
+            for wt in worktrees:
+                p = Path(wt["path"]).resolve()
+                if cwd == p or cwd.is_relative_to(p):
+                    current_sel = "main" if p == resolved_base else p.name
+                    break
+        
+        switch_selection(work_name, base_dir, current_sel, last_sel_file)
 
 
 def cmd_stash(args: list[str]):
@@ -1920,7 +1944,7 @@ def show_help():
 
 def show_version():
     """Show version information"""
-    print("easy-worktree version 0.1.1")
+    print("easy-worktree version 0.1.6")
 
 
 def main():

@@ -762,5 +762,59 @@ touch hook_ran.txt
         self.assertTrue(wt_gitignore.exists())
         self.assertIn("last_selection", wt_gitignore.read_text())
 
+    def test_20_add_no_setup(self):
+        """Test 'wt add --no-setup' (alias for --skip-setup)"""
+        project_dir = self.test_dir / "no-setup-test"
+        if project_dir.exists():
+            shutil.rmtree(project_dir)
+        project_dir.mkdir()
+        subprocess.run(["git", "init"], cwd=project_dir)
+        (project_dir / "README.md").write_text("Hello")
+        subprocess.run(["git", "add", "."], cwd=project_dir)
+        subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=project_dir)
+        self.run_wt(["init"], cwd=project_dir)
+
+        # Config setup files
+        config_file = project_dir / ".wt" / "config.toml"
+        with open(config_file, "r") as f:
+            config = toml.load(f)
+        config["setup_files"] = ["setup_me.txt"]
+        with open(config_file, "w") as f:
+            toml.dump(config, f)
+
+        # Create the setup file
+        (project_dir / "setup_me.txt").write_text("setup content")
+
+        print("\nTesting wt add --no-setup...")
+        self.run_wt(["add", "wt-no-setup", "--no-setup"], cwd=project_dir)
+        
+        wt_dir = project_dir / ".worktrees" / "wt-no-setup"
+        
+        # Verify setup file NOT copied
+        self.assertFalse((wt_dir / "setup_me.txt").exists(), "Setup file should NOT be copied with --no-setup")
+
+    def test_21_add_select(self):
+        """Test 'wt add --select' (auto switch)"""
+        # Note: In non-TTY environment, switch_selection prints the absolute path.
+        project_dir = self.test_dir / "add-select-test"
+        if project_dir.exists():
+            shutil.rmtree(project_dir)
+        project_dir.mkdir()
+        subprocess.run(["git", "init"], cwd=project_dir)
+        (project_dir / "README.md").write_text("Hello")
+        subprocess.run(["git", "add", "."], cwd=project_dir)
+        subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=project_dir)
+        self.run_wt(["init"], cwd=project_dir)
+
+        print("\nTesting wt add --select...")
+        # Since this is non-TTY, it should output the path
+        result = self.run_wt(["add", "wt-select", "--select"], cwd=project_dir)
+        
+        self.assertEqual(result.returncode, 0)
+        
+        # Check if output contains the path to the new worktree
+        expected_path = str((project_dir / ".worktrees" / "wt-select").absolute())
+        self.assertIn(expected_path, result.stdout.strip())
+
 if __name__ == "__main__":
     unittest.main()
