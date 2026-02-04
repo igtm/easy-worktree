@@ -816,5 +816,28 @@ touch hook_ran.txt
         expected_path = str((project_dir / ".worktrees" / "wt-select").absolute())
         self.assertIn(expected_path, result.stdout.strip())
 
+    def test_22_run_command(self):
+        """Test 'wt run <name> <cmd>'"""
+        project_dir = self.test_dir / "run-cmd-test"
+        if project_dir.exists():
+            shutil.rmtree(project_dir)
+        project_dir.mkdir()
+        subprocess.run(["git", "init"], cwd=project_dir)
+        (project_dir / "README.md").write_text("Hello")
+        subprocess.run(["git", "add", "."], cwd=project_dir)
+        subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=project_dir)
+        self.run_wt(["init"], cwd=project_dir)
+
+        # Create a worktree
+        self.run_wt(["add", "wt-run"], cwd=project_dir)
+        
+        # Run a command in it
+        # We'll touch a file and check its existence
+        result = self.run_wt(["run", "wt-run", "touch", "run_tested.txt"], cwd=project_dir)
+        self.assertEqual(result.returncode, 0)
+        
+        wt_dir = project_dir / ".worktrees" / "wt-run"
+        self.assertTrue((wt_dir / "run_tested.txt").exists(), "Command 'touch' failed to create file in worktree")
+
 if __name__ == "__main__":
     unittest.main()

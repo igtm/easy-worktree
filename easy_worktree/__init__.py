@@ -28,8 +28,16 @@ MESSAGES = {
         "ja": "使用方法: wt clone <repository_url>",
     },
     "usage_add": {
-        "en": "Usage: wt add (ad) <work_name> [<base_branch>] [--no-setup] [--select]",
-        "ja": "使用方法: wt add (ad) <作業名> [<base_branch>] [--no-setup] [--select]",
+        "en": "Usage: wt add (ad) <work_name> [<base_branch>] [--no-setup] [--select [<command>...]]",
+        "ja": "使用方法: wt add (ad) <作業名> [<base_branch>] [--no-setup] [--select [<コマンド>...]]",
+    },
+    "usage_select": {
+        "en": "Usage: wt select (sl) [<name>|-] [<command>...]",
+        "ja": "使用方法: wt select (sl) [<名前>|-] [<コマンド>...]",
+    },
+    "usage_run": {
+        "en": "Usage: wt run <name> <command>...",
+        "ja": "使用方法: wt run <名前> <コマンド>...",
     },
     "usage_rm": {"en": "Usage: wt rm <work_name>", "ja": "使用方法: wt rm <作業名>"},
     "base_not_found": {
@@ -879,6 +887,16 @@ def cmd_add(args: list[str]):
 
     work_name = clean_args[0]
     branch_to_use = clean_args[1] if len(clean_args) >= 2 else None
+    
+    # --select 以降をコマンドとして扱う
+    select_command = None
+    if select:
+        try:
+            select_idx = args.index("--select")
+            if select_idx + 1 < len(args):
+                select_command = args[select_idx + 1:]
+        except ValueError:
+            pass
 
     base_dir = find_base_dir()
     wt_path = add_worktree(work_name, branch_to_use=branch_to_use, skip_setup=skip_setup, base_dir=base_dir)
@@ -901,7 +919,7 @@ def cmd_add(args: list[str]):
                     current_sel = "main" if p == resolved_base else p.name
                     break
         
-        switch_selection(work_name, base_dir, current_sel, last_sel_file)
+        switch_selection(work_name, base_dir, current_sel, last_sel_file, command=select_command)
 
 
 def cmd_stash(args: list[str]):
@@ -1504,6 +1522,7 @@ def cmd_select(args: list[str]):
         return
 
     target = args[0]
+    command = args[1:] if len(args) > 1 else None
 
     if target == "-":
         if not last_sel_file.exists():
@@ -1518,7 +1537,46 @@ def cmd_select(args: list[str]):
         print(msg("error", msg("select_not_found", target)), file=sys.stderr)
         sys.exit(1)
 
-    switch_selection(target, base_dir, current_sel, last_sel_file)
+    switch_selection(target, base_dir, current_sel, last_sel_file, command=command)
+
+
+def cmd_run(args: list[str]):
+    """wt run <work_name> <command>... - Run command in worktree and exit"""
+    if len(args) < 2:
+        print(msg("usage_run"), file=sys.stderr)
+        sys.exit(1)
+
+    work_name = args[0]
+    command = args[1:]
+
+    base_dir = find_base_dir()
+    if not base_dir:
+        print(msg("error", msg("base_not_found")), file=sys.stderr)
+        sys.exit(1)
+
+    # find target path
+    target_path = base_dir
+    if work_name != "main":
+        config = load_config(base_dir)
+        worktrees_dir_name = config.get("worktrees_dir", ".worktrees")
+        target_path = base_dir / worktrees_dir_name / work_name
+
+    if not target_path.exists():
+        print(msg("error", msg("select_not_found", work_name)), file=sys.stderr)
+        sys.exit(1)
+
+    # set environment variables
+    env = os.environ.copy()
+    env["WT_SESSION_NAME"] = work_name
+
+    # run command
+    try:
+        subprocess.run(command, cwd=target_path, env=env, check=True)
+    except subprocess.CalledProcessError as e:
+        sys.exit(e.returncode)
+    except Exception as e:
+        print(msg("error", str(e)), file=sys.stderr)
+        sys.exit(1)
 
 
 def cmd_current(args: list[str]):
@@ -1540,7 +1598,7 @@ def cmd_current(args: list[str]):
         print(name)
 
 
-def switch_selection(target, base_dir, current_sel, last_sel_file):
+def switch_selection(target, base_dir, current_sel, last_sel_file, command: list[str] = None):
     """Switch selection and update last_selection"""
     # Calculate target path
     target_path = base_dir
@@ -1599,10 +1657,19 @@ def switch_selection(target, base_dir, current_sel, last_sel_file):
         if os.environ.get("TMUX"):
             subprocess.run(["tmux", "rename-window", f"wt:{target}"], check=False)
 
-        os.execl(shell, shell)
+        if command:
+            cmd_str = " ".join(command)
+            # コマンド実行後にシェルを維持するために "cmd; exec shell" を実行
+            os.execl(shell, shell, "-c", f"{cmd_str}; exec {shell}")
+        else:
+            os.execl(shell, shell)
     else:
         # Output path for script/backtick use
         print(str(target_path.absolute()))
+        if command:
+            # 非 TTY の場合でもコマンドがあれば実行しておく (パイプなどでの利用を想定)
+            import subprocess
+            subprocess.run(command, cwd=target_path, check=True)
 
 
 def cmd_setup(args: list[str]):
@@ -1944,7 +2011,7 @@ def show_help():
 
 def show_version():
     """Show version information"""
-    print("easy-worktree version 0.1.6")
+    print("easy-worktree version 0.1.7")
 
 
 def main():
@@ -1991,6 +2058,8 @@ def main():
         cmd_current(args)
     elif command in ["co", "checkout"]:
         cmd_checkout(args)
+    elif command == "run":
+        cmd_run(args)
     else:
         # その他のコマンドは git worktree にパススルー
         cmd_passthrough([command] + args)
