@@ -872,31 +872,36 @@ def cmd_add(args: list[str]):
     clean_args = []
     skip_setup = False
     select = False
+    select_command = None
     
-    for arg in args:
+    i = 0
+    while i < len(args):
+        arg = args[i]
         if arg in ["--skip-setup", "--no-setup"]:
             skip_setup = True
         elif arg == "--select":
             select = True
+            if i + 1 < len(args):
+                select_command = args[i+1:]
+            break # Consume everything after --select as command
         else:
             clean_args.append(arg)
-            
+        i += 1
+
+    # Heuristic: if clean_args is empty but we have select_command,
+    # it likely means the user put --select before the work_name.
+    if not clean_args and select_command:
+        # Take the first one as work_name
+        clean_args.append(select_command.pop(0))
+        if not select_command:
+            select_command = None
+
     if not clean_args:
         print(msg("usage_add"), file=sys.stderr)
         sys.exit(1)
 
     work_name = clean_args[0]
     branch_to_use = clean_args[1] if len(clean_args) >= 2 else None
-    
-    # --select 以降をコマンドとして扱う
-    select_command = None
-    if select:
-        try:
-            select_idx = args.index("--select")
-            if select_idx + 1 < len(args):
-                select_command = args[select_idx + 1:]
-        except ValueError:
-            pass
 
     base_dir = find_base_dir()
     wt_path = add_worktree(work_name, branch_to_use=branch_to_use, skip_setup=skip_setup, base_dir=base_dir)
@@ -2011,7 +2016,7 @@ def show_help():
 
 def show_version():
     """Show version information"""
-    print("easy-worktree version 0.1.7")
+    print("easy-worktree version 0.1.8")
 
 
 def main():

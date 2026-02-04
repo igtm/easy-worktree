@@ -839,5 +839,25 @@ touch hook_ran.txt
         wt_dir = project_dir / ".worktrees" / "wt-run"
         self.assertTrue((wt_dir / "run_tested.txt").exists(), "Command 'touch' failed to create file in worktree")
 
+    def test_23_add_select_parser_fix(self):
+        """Test 'wt add --select name cmd' (bug fix for parser)"""
+        project_dir = self.test_dir / "add-select-parser-test"
+        if project_dir.exists():
+            shutil.rmtree(project_dir)
+        project_dir.mkdir()
+        subprocess.run(["git", "init"], cwd=project_dir)
+        (project_dir / "README.md").write_text("Hello")
+        subprocess.run(["git", "add", "."], cwd=project_dir)
+        subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=project_dir)
+        self.run_wt(["init"], cwd=project_dir)
+
+        # This should correctly use 'wt-parser-fix' as worktree name and 'touch parser_fixed.txt' as command
+        result = self.run_wt(["add", "--select", "wt-parser-fix", "touch", "parser_fixed.txt"], cwd=project_dir)
+        self.assertEqual(result.returncode, 0)
+        
+        wt_dir = project_dir / ".worktrees" / "wt-parser-fix"
+        self.assertTrue(wt_dir.exists(), "Worktree not created")
+        self.assertTrue((wt_dir / "parser_fixed.txt").exists(), "Command failed to run in correct worktree")
+
 if __name__ == "__main__":
     unittest.main()
