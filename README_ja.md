@@ -50,6 +50,13 @@ wt clone https://github.com/user/repo.git
 
 リポジトリをクローンし、`easy-worktree` 用の初期設定を自動で行います。
 
+bare リポジトリを使う場合は、通常の git コマンドでも構成できます：
+
+```bash
+git clone --bare https://github.com/user/repo.git sandbox.git
+git --git-dir=sandbox.git worktree add sandbox/main main
+```
+
 #### 既存のリポジトリで使い始める場合
 
 ```bash
@@ -83,6 +90,12 @@ my-repo/ (main)
 wt add feature-1 main
 ```
 
+bare リポジトリで操作する場合は、グローバル引数 `--git-dir` を使います：
+
+```bash
+wt --git-dir=/path/to/sandbox.git add feature-1 main
+```
+
 #### セットアップをスキップする
 
 自動セットアップ（ファイルのコピーや hook の実行）を行わずに worktree を作成したい場合は、`--skip-setup` フラグを使用します：
@@ -91,12 +104,32 @@ wt add feature-1 main
 wt add feature-1 --skip-setup
 ```
 
+エイリアスフラグも使えます：
+
+```bash
+wt add feature-1 --no-setup
+```
+
+作成後にそのまま切り替えることもできます：
+
+```bash
+wt add feature-1 --select
+wt add feature-1 --select npm test
+```
+
 #### 一覧を表示 (ショートカット: `ls`)
 
 ```bash
 wt list
 wt ls --pr   # GitHub の PR 情報もあわせて表示
+wt list --sort created --desc
+wt list --sort last-commit --asc
+wt list --merged
+wt list --days 30
 ```
+
+`wt list` は `Created` と `Last Commit` の両カラムを表示します。  
+デフォルトのソートは `Created` の降順です。
 
 
 #### スタッシュと移動 (ショートカット: `st`)
@@ -124,6 +157,18 @@ wt select feature-1
 ※ すでに `wt` のサブシェル内にいる状態で再度実行すると、ネストを警告するメッセージが表示されます。ネストを避けるには一度 `exit` してから切り替えることをお勧めします。
 
 引数なしで実行すると `fzf` によるインタラクティブな選択が可能です。
+
+切り替え後にコマンドを実行することもできます：
+
+```bash
+wt select feature-1 npm test
+```
+
+直前に選択していた worktree に戻るには `-` を使います：
+
+```bash
+wt select -
+```
 
 #### PR 管理
 
@@ -178,6 +223,19 @@ RPROMPT='${WT_SESSION_NAME:+"(wt:$WT_SESSION_NAME)"} '"$RPROMPT"
 PS1='$(if [ -n "$WT_SESSION_NAME" ]; then echo "($WT_SESSION_NAME) "; fi)'$PS1
 ```
 
+##### タブ補完
+1行で補完を有効化できます：
+
+```bash
+# zsh
+eval "$(wt completion zsh)"
+
+# bash
+eval "$(wt completion bash)"
+```
+
+永続化する場合は、同じ行を `~/.zshrc` または `~/.bashrc` に追記してください。
+
 ##### Starship
 `starship.toml` にカスタムモジュールを追加します。
 ```toml
@@ -209,6 +267,34 @@ function prompt_easy_worktree() {
 wt clean --merged
 wt clean --closed  # クローズされた (未マージ) PRのworktreeを削除
 wt clean --days 30
+wt clean --all
+```
+
+削除条件は以下です：
+- `wt clean --all`: clean な worktree を削除（main/base worktree とシンボリックリンク参照先は除外）。確認なしで実行。
+- `wt clean --days N`: 作成から `N` 日以上経過し、かつ clean な worktree を削除。
+- `wt clean --merged`: デフォルトブランチにマージ済み、または `gh pr list --state merged` に含まれるブランチの clean worktree を削除。
+- `wt clean --closed`: `gh pr list --state closed` に含まれるブランチの clean worktree を削除。
+
+補足：
+- ローカル変更のある worktree は削除されません。
+- main/base worktree は削除されません。
+- `--merged` では、default branch と同一 SHA かつ merged PR に載っていないブランチは安全のため削除しません。
+- `--all` 以外は確認プロンプトが出ます。
+- `Created` 表示は `$XDG_CONFIG_HOME/easy-worktree/` 配下のメタデータ固定値を使います（ファイルシステムの ctime を毎回直接参照しません）。
+
+#### コマンド引数リファレンス
+
+```bash
+wt [--git-dir <path> | --git-dir=<path>] <command> ...
+wt add <work_name> [<base_branch>] [--skip-setup|--no-setup] [--select [<command>...]]
+wt select [<name>|-] [<command>...]
+wt run <name> <command>...
+wt rm <work_name> [-f|--force]
+wt list [--pr] [--quiet|-q] [--days N] [--merged] [--closed] [--all] [--sort created|last-commit|name|branch] [--asc|--desc]
+wt clean [--days N] [--merged] [--closed] [--all]
+wt setup
+wt completion <bash|zsh>
 ```
 
 
@@ -219,11 +305,36 @@ wt clean --days 30
 ```toml
 worktrees_dir = ".worktrees"   # worktree を作成するディレクトリ名
 setup_files = [".env"]          # 自動セットアップでコピーするファイル一覧
+setup_source_dir = ""           # 任意。セットアップコピー元を明示指定
 ```
+
+`setup_source_dir` は相対パス（ベースディレクトリ基準）/絶対パスの両方に対応します。  
+空の場合は自動判定されます：
+- 通常リポジトリ: リポジトリルート
+- bare リポジトリ: デフォルトブランチの worktree（なければ最初の non-bare worktree）
 
 #### ローカル設定の上書き
 
 `.wt/config.local.toml` を作成すると、設定をローカルでのみ上書きできます。このファイルは自動的に `.gitignore` に追加され、リポジトリにはコミットされません。
+
+#### `.wt/` ディレクトリの扱い
+
+- `.wt/` はワーキングツリー側に作成され、bare の git オブジェクトディレクトリ直下には作成しません。
+- 通常リポジトリでは、`.wt/` はリポジトリルートに作成されます。
+- `--git-dir=<path>` 指定時:
+  - `<path>` が `.git` の場合は、そのリポジトリルートに `.wt/` を作成
+  - `<path>` が bare リポジトリ（例: `sandbox.git`）の場合は、優先 non-bare worktree（デフォルトブランチ優先、なければ最初に見つかった non-bare）に `.wt/` を作成
+- bare リポジトリで non-bare worktree が無い場合は、先に worktree を作るようエラーを返します。
+
+`.wt/` には現在以下のファイルが使われます：
+- `config.toml`
+- `config.local.toml`（任意・ignore）
+- `post-add`
+- `post-add.local`（任意・ignore）
+- `last_selection`（ignore）
+
+メタデータ保存先:
+- worktree 作成時刻メタデータは `$XDG_CONFIG_HOME/easy-worktree/`（未設定時は `~/.config/easy-worktree/`）に保存されます。
 
 ## Hook
 

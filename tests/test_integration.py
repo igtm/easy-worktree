@@ -42,6 +42,7 @@ class TestWtIntegration(unittest.TestCase):
         env["LANG"] = "en"
         env["LC_ALL"] = "C"
         env["LANGUAGE"] = "en"
+        env["XDG_CONFIG_HOME"] = str(self.test_dir / "xdg-config")
         # Ensure test isolation from host environment
         if "WT_SESSION_NAME" in env:
             del env["WT_SESSION_NAME"]
@@ -858,6 +859,253 @@ touch hook_ran.txt
         wt_dir = project_dir / ".worktrees" / "wt-parser-fix"
         self.assertTrue(wt_dir.exists(), "Worktree not created")
         self.assertTrue((wt_dir / "parser_fixed.txt").exists(), "Command failed to run in correct worktree")
+
+    def test_24_global_git_dir_forms(self):
+        """Test global --git-dir parsing for both forms"""
+        project_dir = self.test_dir / "git-dir-global-test"
+        if project_dir.exists():
+            shutil.rmtree(project_dir)
+        project_dir.mkdir()
+        subprocess.run(["git", "init"], cwd=project_dir)
+        (project_dir / "README.md").write_text("Hello")
+        subprocess.run(["git", "add", "."], cwd=project_dir)
+        subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=project_dir)
+
+        git_dir = project_dir / ".git"
+
+        result_init = self.run_wt(["--git-dir", str(git_dir), "init"], cwd=self.test_dir)
+        self.assertEqual(result_init.returncode, 0, f"Init with --git-dir failed: {result_init.stderr}")
+
+        result_add_eq = self.run_wt(
+            [f"--git-dir={git_dir}", "add", "wt-gd-eq"],
+            cwd=self.test_dir,
+        )
+        self.assertEqual(result_add_eq.returncode, 0, f"Add with --git-dir= failed: {result_add_eq.stderr}")
+        self.assertTrue((project_dir / ".worktrees" / "wt-gd-eq").exists())
+
+        result_add_sep = self.run_wt(
+            ["--git-dir", str(git_dir), "add", "wt-gd-sep"],
+            cwd=self.test_dir,
+        )
+        self.assertEqual(result_add_sep.returncode, 0, f"Add with --git-dir <path> failed: {result_add_sep.stderr}")
+        self.assertTrue((project_dir / ".worktrees" / "wt-gd-sep").exists())
+
+    def test_25_bare_setup_source_auto_detect(self):
+        """Test bare mode setup file copy source auto-detection from base branch worktree"""
+        source_repo = self.test_dir / "bare-source-origin"
+        if source_repo.exists():
+            shutil.rmtree(source_repo)
+        source_repo.mkdir()
+        subprocess.run(["git", "init"], cwd=source_repo)
+        (source_repo / "README.md").write_text("Hello")
+        subprocess.run(["git", "add", "."], cwd=source_repo)
+        subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=source_repo)
+        subprocess.run(["git", "branch", "-M", "main"], cwd=source_repo)
+
+        bare_repo = self.test_dir / "bare-source.git"
+        subprocess.run(["git", "clone", "--bare", str(source_repo), str(bare_repo)])
+        main_wt = self.test_dir / "bare-source-main"
+        subprocess.run(["git", f"--git-dir={bare_repo}", "worktree", "add", str(main_wt), "main"])
+
+        (main_wt / "shared.txt").write_text("from-main-worktree")
+        subprocess.run(["git", "add", "shared.txt"], cwd=main_wt)
+        subprocess.run(["git", "commit", "-m", "Add shared setup file"], cwd=main_wt)
+
+        self.run_wt([f"--git-dir={bare_repo}", "init"], cwd=self.test_dir)
+        config_file = main_wt / ".wt" / "config.toml"
+        with open(config_file, "r") as f:
+            config = toml.load(f)
+        config["setup_files"] = ["shared.txt"]
+        with open(config_file, "w") as f:
+            toml.dump(config, f)
+
+        result = self.run_wt([f"--git-dir={bare_repo}", "add", "feature-bare"], cwd=self.test_dir)
+        self.assertEqual(result.returncode, 0, f"Bare add failed: {result.stderr}")
+
+        feature_wt = bare_repo / ".worktrees" / "feature-bare"
+        self.assertTrue((feature_wt / "shared.txt").exists(), "setup file should be copied from main worktree")
+        self.assertEqual((feature_wt / "shared.txt").read_text(), "from-main-worktree")
+
+        (feature_wt / "shared.txt").unlink()
+        setup_result = self.run_wt(["setup"], cwd=feature_wt)
+        self.assertEqual(setup_result.returncode, 0, f"wt setup failed in bare worktree: {setup_result.stderr}")
+        self.assertTrue((feature_wt / "shared.txt").exists(), "wt setup should restore setup file in bare mode")
+
+    def test_26_setup_source_dir_override(self):
+        """Test setup_source_dir overrides auto source selection"""
+        project_dir = self.test_dir / "setup-source-override-test"
+        if project_dir.exists():
+            shutil.rmtree(project_dir)
+        project_dir.mkdir()
+        subprocess.run(["git", "init"], cwd=project_dir)
+        (project_dir / "README.md").write_text("Hello")
+        subprocess.run(["git", "add", "."], cwd=project_dir)
+        subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=project_dir)
+        self.run_wt(["init"], cwd=project_dir)
+
+        (project_dir / "copy.txt").write_text("from-root")
+        templates_dir = project_dir / "templates"
+        templates_dir.mkdir()
+        (templates_dir / "copy.txt").write_text("from-templates")
+
+        config_file = project_dir / ".wt" / "config.toml"
+        with open(config_file, "r") as f:
+            config = toml.load(f)
+        config["setup_files"] = ["copy.txt"]
+        config["setup_source_dir"] = "templates"
+        with open(config_file, "w") as f:
+            toml.dump(config, f)
+
+        result = self.run_wt(["add", "wt-source-override"], cwd=project_dir)
+        self.assertEqual(result.returncode, 0, f"Add failed: {result.stderr}")
+
+        wt_dir = project_dir / ".worktrees" / "wt-source-override"
+        self.assertEqual((wt_dir / "copy.txt").read_text(), "from-templates")
+
+    def test_27_bare_missing_source_warn_and_skip(self):
+        """Test bare mode skips setup copy with warning when no source worktree exists"""
+        source_repo = self.test_dir / "bare-missing-origin"
+        if source_repo.exists():
+            shutil.rmtree(source_repo)
+        source_repo.mkdir()
+        subprocess.run(["git", "init"], cwd=source_repo)
+        (source_repo / "README.md").write_text("Hello")
+        subprocess.run(["git", "add", "."], cwd=source_repo)
+        subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=source_repo)
+        subprocess.run(["git", "branch", "-M", "main"], cwd=source_repo)
+
+        bare_repo = self.test_dir / "bare-missing.git"
+        subprocess.run(["git", "clone", "--bare", str(source_repo), str(bare_repo)])
+
+        main_wt = self.test_dir / "bare-missing-main"
+        subprocess.run(["git", f"--git-dir={bare_repo}", "worktree", "add", str(main_wt), "main"])
+
+        self.run_wt([f"--git-dir={bare_repo}", "init"], cwd=self.test_dir)
+        config_file = main_wt / ".wt" / "config.toml"
+        with open(config_file, "r") as f:
+            config = toml.load(f)
+        config["setup_files"] = ["not-found.txt"]
+        with open(config_file, "w") as f:
+            toml.dump(config, f)
+
+        result = self.run_wt([f"--git-dir={bare_repo}", "add", "feature-no-source"], cwd=self.test_dir)
+        self.assertEqual(result.returncode, 0, f"Add should succeed even when setup file is missing: {result.stderr}")
+
+        wt_dir = bare_repo / ".worktrees" / "feature-no-source"
+        self.assertTrue(wt_dir.exists(), "worktree should still be created")
+        self.assertFalse((wt_dir / "not-found.txt").exists(), "setup file should not be copied")
+
+    def test_28_created_time_is_pinned_in_metadata(self):
+        """Test created time is stored in metadata and remains stable"""
+        project_dir = self.test_dir / "created-time-metadata-test"
+        if project_dir.exists():
+            shutil.rmtree(project_dir)
+        project_dir.mkdir()
+        subprocess.run(["git", "init"], cwd=project_dir)
+        (project_dir / "README.md").write_text("Hello")
+        subprocess.run(["git", "add", "."], cwd=project_dir)
+        subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=project_dir)
+        self.run_wt(["init"], cwd=project_dir)
+        self.run_wt(["add", "wt-meta"], cwd=project_dir)
+
+        wt_path = (project_dir / ".worktrees" / "wt-meta").resolve()
+        metadata_dir = self.test_dir / "xdg-config" / "easy-worktree"
+        metadata_files = list(metadata_dir.glob("worktree_metadata_*.toml"))
+        self.assertTrue(metadata_files, "metadata file should exist in XDG config dir")
+
+        entry = None
+        metadata_file = None
+        for candidate in metadata_files:
+            with open(candidate, "r") as f:
+                metadata = toml.load(f)
+            entries = metadata.get("worktrees", [])
+            entry = next((x for x in entries if x.get("path") == str(wt_path)), None)
+            if entry:
+                metadata_file = candidate
+                break
+        self.assertIsNotNone(entry, "worktree entry should exist in metadata")
+        created_1 = entry.get("created_at")
+        self.assertTrue(created_1, "created_at should be recorded")
+
+        # Touch worktree contents and run list; created_at should remain unchanged.
+        time.sleep(1)
+        (wt_path / "touch.txt").write_text("changed")
+        self.run_wt(["list"], cwd=project_dir)
+
+        with open(metadata_file, "r") as f:
+            metadata_after = toml.load(f)
+        entries_after = metadata_after.get("worktrees", [])
+        entry_after = next((x for x in entries_after if x.get("path") == str(wt_path)), None)
+        self.assertIsNotNone(entry_after)
+        created_2 = entry_after.get("created_at")
+        self.assertEqual(created_1, created_2, "created_at should stay fixed")
+
+    def test_29_list_sort_and_clean_filters(self):
+        """Test wt list supports sort options and clean-compatible filters"""
+        project_dir = self.test_dir / "list-sort-filter-test"
+        if project_dir.exists():
+            shutil.rmtree(project_dir)
+        project_dir.mkdir()
+        subprocess.run(["git", "init"], cwd=project_dir)
+        (project_dir / "README.md").write_text("Hello")
+        subprocess.run(["git", "add", "."], cwd=project_dir)
+        subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=project_dir)
+        self.run_wt(["init"], cwd=project_dir)
+
+        self.run_wt(["add", "wt-a"], cwd=project_dir)
+        time.sleep(1)
+        self.run_wt(["add", "wt-b"], cwd=project_dir)
+
+        # Make wt-b dirty so it should be excluded by --all filter
+        (project_dir / ".worktrees" / "wt-b" / "dirty.txt").write_text("dirty")
+
+        list_result = self.run_wt(["list"], cwd=project_dir)
+        self.assertEqual(list_result.returncode, 0, f"list failed: {list_result.stderr}")
+        self.assertIn("Created", list_result.stdout)
+        self.assertIn("Last Commit", list_result.stdout)
+
+        sort_result = self.run_wt(["list", "--sort", "last-commit", "--asc", "--quiet"], cwd=project_dir)
+        self.assertEqual(sort_result.returncode, 0, f"list sort failed: {sort_result.stderr}")
+        self.assertIn("wt-a", sort_result.stdout)
+        self.assertIn("wt-b", sort_result.stdout)
+
+        filter_result = self.run_wt(["list", "--all", "--quiet"], cwd=project_dir)
+        self.assertEqual(filter_result.returncode, 0, f"list filter failed: {filter_result.stderr}")
+        self.assertIn("wt-a", filter_result.stdout)
+        self.assertNotIn("wt-b", filter_result.stdout)
+        self.assertNotIn("main", filter_result.stdout)
+
+    def test_30_select_typo_suggestion(self):
+        """Test typo suggestion for worktree names"""
+        project_dir = self.test_dir / "select-suggest-test"
+        if project_dir.exists():
+            shutil.rmtree(project_dir)
+        project_dir.mkdir()
+        subprocess.run(["git", "init"], cwd=project_dir)
+        (project_dir / "README.md").write_text("Hello")
+        subprocess.run(["git", "add", "."], cwd=project_dir)
+        subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=project_dir)
+        self.run_wt(["init"], cwd=project_dir)
+        self.run_wt(["add", "feature-one"], cwd=project_dir)
+
+        result = self.run_wt(["select", "feature-ono"], cwd=project_dir)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Worktree not found: feature-ono", result.stderr)
+        self.assertIn("Did you mean: feature-one", result.stderr)
+
+    def test_31_completion_output(self):
+        """Test completion subcommand outputs scripts"""
+        bash_result = self.run_wt(["completion", "bash"], cwd=self.test_dir)
+        self.assertEqual(bash_result.returncode, 0, f"completion bash failed: {bash_result.stderr}")
+        self.assertIn("complete -F _wt_completions wt", bash_result.stdout)
+
+        zsh_result = self.run_wt(["completion", "zsh"], cwd=self.test_dir)
+        self.assertEqual(zsh_result.returncode, 0, f"completion zsh failed: {zsh_result.stderr}")
+        self.assertIn("bashcompinit", zsh_result.stdout)
+
+        invalid_result = self.run_wt(["completion", "fish"], cwd=self.test_dir)
+        self.assertNotEqual(invalid_result.returncode, 0)
+        self.assertIn("Usage: wt completion <bash|zsh>", invalid_result.stderr)
 
 if __name__ == "__main__":
     unittest.main()
