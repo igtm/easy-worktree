@@ -59,6 +59,17 @@ git clone --bare https://github.com/user/repo.git sandbox.git
 git --git-dir=sandbox.git worktree add sandbox/main main
 ```
 
+Or let `wt` do it for you:
+
+```bash
+wt clone --bare https://github.com/user/repo.git sandbox.git
+```
+
+`wt clone --bare` automatically:
+- clones as bare repository (`sandbox.git`)
+- creates base-branch worktree (`sandbox/<default-branch>`)
+- initializes `.wt/` in that base-branch worktree
+
 #### Initialize an existing repository
 
 ```bash
@@ -67,6 +78,14 @@ wt init
 ```
 
 Initializes `easy-worktree` in the current repository. Your main repository stays at the project root.
+
+For bare repositories:
+
+```bash
+wt --git-dir=/path/to/sandbox.git init
+```
+
+If no non-bare worktree exists yet, `wt init` will automatically create a base-branch worktree and initialize `.wt/` there.
 
 ### Managing Worktrees
 

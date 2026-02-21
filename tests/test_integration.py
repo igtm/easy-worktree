@@ -1107,5 +1107,72 @@ touch hook_ran.txt
         self.assertNotEqual(invalid_result.returncode, 0)
         self.assertIn("Usage: wt completion <bash|zsh>", invalid_result.stderr)
 
+    def test_32_clone_bare_creates_base_worktree_and_wt(self):
+        """Test wt clone --bare creates base branch worktree and initializes .wt"""
+        repo_url = str(self.source_repo)
+        bare_dir_name = "memo-bare-project.git"
+        bare_dir = self.test_dir / bare_dir_name
+
+        result = self.run_wt(["clone", "--bare", repo_url, bare_dir_name], cwd=self.test_dir)
+        self.assertEqual(result.returncode, 0, f"Bare clone failed: {result.stderr}")
+        self.assertTrue(bare_dir.exists(), "Bare repository directory not created")
+
+        # Resolve created base branch from worktree list in bare repo
+        list_res = subprocess.run(
+            ["git", f"--git-dir={bare_dir}", "worktree", "list", "--porcelain"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(list_res.returncode, 0, f"Failed to list worktrees: {list_res.stderr}")
+        default_branch = None
+        for line in list_res.stdout.splitlines():
+            if line.startswith("branch refs/heads/"):
+                default_branch = line.split("branch refs/heads/", 1)[1].strip()
+                break
+        self.assertIsNotNone(default_branch, "Failed to resolve base branch from worktree list")
+
+        base_worktree = self.test_dir / "memo-bare-project" / default_branch
+        self.assertTrue(base_worktree.exists(), "Base branch worktree not created")
+        self.assertTrue((base_worktree / ".wt").exists(), ".wt directory not initialized in base worktree")
+        self.assertTrue((base_worktree / ".wt" / "config.toml").exists(), "config.toml not created in base worktree")
+
+    def test_33_init_bare_creates_base_worktree_and_wt(self):
+        """Test wt --git-dir=<bare> init creates base worktree and initializes .wt"""
+        source_repo = self.test_dir / "init-bare-origin"
+        if source_repo.exists():
+            shutil.rmtree(source_repo)
+        source_repo.mkdir()
+        subprocess.run(["git", "init"], cwd=source_repo)
+        (source_repo / "README.md").write_text("Hello")
+        subprocess.run(["git", "add", "."], cwd=source_repo)
+        subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=source_repo)
+        subprocess.run(["git", "branch", "-M", "main"], cwd=source_repo)
+
+        bare_repo = self.test_dir / "init-bare.git"
+        subprocess.run(["git", "clone", "--bare", str(source_repo), str(bare_repo)])
+
+        result = self.run_wt([f"--git-dir={bare_repo}", "init"], cwd=self.test_dir)
+        self.assertEqual(result.returncode, 0, f"init on bare failed: {result.stderr}")
+
+        list_res = subprocess.run(
+            ["git", f"--git-dir={bare_repo}", "worktree", "list", "--porcelain"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(list_res.returncode, 0, f"Failed to list worktrees: {list_res.stderr}")
+        default_branch = None
+        for line in list_res.stdout.splitlines():
+            if line.startswith("branch refs/heads/"):
+                default_branch = line.split("branch refs/heads/", 1)[1].strip()
+                break
+        self.assertIsNotNone(default_branch, "Failed to resolve base branch from worktree list")
+
+        base_worktree = self.test_dir / "init-bare" / default_branch
+        self.assertTrue(base_worktree.exists(), "Base branch worktree not created by init")
+        self.assertTrue((base_worktree / ".wt").exists(), ".wt not initialized in base worktree by init")
+        self.assertTrue((base_worktree / ".wt" / "config.toml").exists(), "config.toml missing in base worktree")
+
 if __name__ == "__main__":
     unittest.main()

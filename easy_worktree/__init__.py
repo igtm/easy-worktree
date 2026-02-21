@@ -29,8 +29,8 @@ def is_japanese() -> bool:
 MESSAGES = {
     "error": {"en": "Error: {}", "ja": "エラー: {}"},
     "usage": {
-        "en": "Usage: wt clone <repository_url>",
-        "ja": "使用方法: wt clone <repository_url>",
+        "en": "Usage: wt clone [--bare] <repository_url> [dest_dir]",
+        "ja": "使用方法: wt clone [--bare] <repository_url> [dest_dir]",
     },
     "usage_add": {
         "en": "Usage: wt add (ad) <work_name> [<base_branch>] [--skip-setup|--no-setup] [--select [<command>...]]",
@@ -288,6 +288,72 @@ def get_repository_name(url: str) -> str:
         return name.split(":")[-1]
     # ローカルパスの場合
     return Path(url).stem
+
+
+def get_default_branch_for_bare_git_dir(git_dir: Path) -> str | None:
+    """bare git-dir からデフォルトブランチ名を検出"""
+    result = run_command(
+        ["git", f"--git-dir={git_dir}", "symbolic-ref", "refs/remotes/origin/HEAD"],
+        check=False,
+        apply_global_git_dir=False,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        ref = result.stdout.strip()
+        return ref.split("/")[-1]
+
+    for b in ["main", "master"]:
+        check = run_command(
+            ["git", f"--git-dir={git_dir}", "show-ref", "--verify", f"refs/heads/{b}"],
+            check=False,
+            apply_global_git_dir=False,
+        )
+        if check.returncode == 0:
+            return b
+
+    head_ref = run_command(
+        ["git", f"--git-dir={git_dir}", "symbolic-ref", "HEAD"],
+        check=False,
+        apply_global_git_dir=False,
+    )
+    if head_ref.returncode == 0 and head_ref.stdout.strip():
+        ref = head_ref.stdout.strip()
+        if ref.startswith("refs/heads/"):
+            return ref.replace("refs/heads/", "", 1)
+
+    return None
+
+
+def ensure_base_worktree_for_bare(base_dir: Path) -> Path:
+    """bare リポジトリに non-bare worktree が無ければ作成して返す"""
+    existing = get_preferred_non_bare_worktree(base_dir)
+    if existing:
+        return existing
+
+    default_branch = get_default_branch_for_bare_git_dir(base_dir)
+    if not default_branch:
+        print(msg("error", msg("default_branch_not_found")), file=sys.stderr)
+        sys.exit(1)
+
+    base_worktree_root = base_dir.parent / base_dir.stem
+    base_worktree_path = base_worktree_root / default_branch
+    if base_worktree_path.exists():
+        print(msg("error", msg("already_exists", base_worktree_path)), file=sys.stderr)
+        sys.exit(1)
+
+    print(msg("creating_worktree", base_worktree_path), file=sys.stderr)
+    run_command(
+        [
+            "git",
+            f"--git-dir={base_dir}",
+            "worktree",
+            "add",
+            str(base_worktree_path),
+            default_branch,
+        ],
+        apply_global_git_dir=False,
+    )
+    print(msg("completed_worktree", base_worktree_path), file=sys.stderr)
+    return base_worktree_path
 
 
 def get_preferred_non_bare_worktree(base_dir: Path) -> Path | None:
@@ -854,26 +920,50 @@ def copy_setup_files(base_dir: Path, target_path: Path, setup_files: list[str], 
 
 
 def cmd_clone(args: list[str]):
-    """wt clone <repository_url> [dest_dir] - Clone a repository"""
+    """wt clone [--bare] <repository_url> [dest_dir] - Clone a repository"""
     if len(args) < 1:
         print(msg("usage"), file=sys.stderr)
         sys.exit(1)
 
-    repo_url = args[0]
+    bare_mode = False
+    clean_args = []
+    for arg in args:
+        if arg == "--bare":
+            bare_mode = True
+        else:
+            clean_args.append(arg)
+
+    if len(clean_args) < 1:
+        print(msg("usage"), file=sys.stderr)
+        sys.exit(1)
+
+    repo_url = clean_args[0]
     repo_name = get_repository_name(repo_url)
 
-    dest_dir = Path(args[1]) if len(args) > 1 else Path(repo_name)
+    if len(clean_args) > 1:
+        dest_dir = Path(clean_args[1])
+    else:
+        dest_dir = Path(f"{repo_name}.git" if bare_mode else repo_name)
 
     if dest_dir.exists():
         print(msg("error", msg("already_exists", dest_dir)), file=sys.stderr)
         sys.exit(1)
 
     print(msg("cloning", repo_url, dest_dir), file=sys.stderr)
-    run_command(["git", "clone", repo_url, str(dest_dir)], apply_global_git_dir=False)
+    clone_cmd = ["git", "clone"]
+    if bare_mode:
+        clone_cmd.append("--bare")
+    clone_cmd.extend([repo_url, str(dest_dir)])
+    run_command(clone_cmd, apply_global_git_dir=False)
     print(msg("completed_clone", dest_dir), file=sys.stderr)
 
-    # post-add hook と設定ファイルを作成
-    create_hook_template(dest_dir)
+    if bare_mode:
+        ensure_base_worktree_for_bare(dest_dir)
+        # bare の場合は base branch worktree 側に .wt を作成
+        create_hook_template(dest_dir)
+    else:
+        # post-add hook と設定ファイルを作成
+        create_hook_template(dest_dir)
 
 
 def cmd_init(args: list[str]):
@@ -882,6 +972,9 @@ def cmd_init(args: list[str]):
     if not base_dir:
         print(msg("error", msg("not_git_repo")), file=sys.stderr)
         sys.exit(1)
+
+    if is_bare_repository(base_dir):
+        ensure_base_worktree_for_bare(base_dir)
 
     # post-add hook と設定ファイルを作成
     create_hook_template(base_dir)
@@ -2409,7 +2502,7 @@ def show_help():
         print("  wt <command> [options]")
         print()
         print("コマンド:")
-        print(f"  {'clone <repository_url>':<55} - リポジトリをクローン")
+        print(f"  {'clone [--bare] <repository_url> [dest_dir]':<55} - リポジトリをクローン")
         print(f"  {'init':<55} - 既存リポジトリをメインリポジトリとして構成")
         print(
             f"  {'add (ad) <作業名> [<base_branch>] [--skip-setup|--no-setup] [--select [<コマンド>...]]':<55} - worktree を追加"
@@ -2448,7 +2541,7 @@ def show_help():
         print("  wt <command> [options]")
         print()
         print("Commands:")
-        print(f"  {'clone <repository_url>':<55} - Clone a repository")
+        print(f"  {'clone [--bare] <repository_url> [dest_dir]':<55} - Clone a repository")
         print(f"  {'init':<55} - Configure existing repository as main")
         print(
             f"  {'add (ad) <work_name> [<base_branch>] [--skip-setup|--no-setup] [--select [<command>...]]':<55} - Add a worktree"
@@ -2482,7 +2575,7 @@ def show_help():
 
 def show_version():
     """Show version information"""
-    print("easy-worktree version 0.2.0")
+    print("easy-worktree version 0.2.1")
 
 
 def parse_global_args(argv: list[str]) -> list[str]:

@@ -57,6 +57,17 @@ git clone --bare https://github.com/user/repo.git sandbox.git
 git --git-dir=sandbox.git worktree add sandbox/main main
 ```
 
+`wt` でまとめて行うこともできます：
+
+```bash
+wt clone --bare https://github.com/user/repo.git sandbox.git
+```
+
+`wt clone --bare` は以下を自動で実行します：
+- bare リポジトリとして clone（`sandbox.git`）
+- base ブランチの worktree 作成（`sandbox/<default-branch>`）
+- その base ブランチ worktree に `.wt/` を初期化
+
 #### 既存のリポジトリで使い始める場合
 
 ```bash
@@ -65,6 +76,14 @@ wt init
 ```
 
 現在のディレクトリをメインリポジトリ（ルート）として `easy-worktree` を初期化します。既存のリポジトリ構成はそのまま維持されます。
+
+bare リポジトリの場合:
+
+```bash
+wt --git-dir=/path/to/sandbox.git init
+```
+
+まだ non-bare worktree が無い場合でも、`wt init` が base ブランチ worktree を自動作成し、その中に `.wt/` を初期化します。
 
 ### worktree の操作
 
