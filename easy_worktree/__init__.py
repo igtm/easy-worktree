@@ -606,7 +606,7 @@ def create_hook_template(base_dir: Path):
     worktrees_dir_name = config.get("worktrees_dir", ".worktrees")
     root_gitignore = wt_home / ".gitignore"
 
-    entries = [f"{worktrees_dir_name}/"]
+    entries = [".wt/", f"{worktrees_dir_name}/"]
 
     if root_gitignore.exists():
         content = root_gitignore.read_text(encoding="utf-8")
@@ -2058,31 +2058,30 @@ def cmd_diff(args: list[str]):
 
     config = load_config(base_dir)
     worktrees = get_worktree_info(base_dir)
-    names = []
+    
+    # マップを作成 (名前 -> 絶対パス)
+    name_map = {}
     for wt in worktrees:
         p = Path(wt["path"])
-        name = "main" if p == base_dir else p.name
-        names.append(name)
+        # base_dir 自体は "main" とみなす
+        name = "main" if p.resolve() == base_dir.resolve() else p.name
+        name_map[name] = p
 
-    target_wt = None
+    target_path = None
     remaining_args = []
 
     i = 0
     while i < len(args):
         arg = args[i]
-        if target_wt is None and arg in names:
-            target_wt = arg
+        # まだターゲットが決まっておらず、引数が登録済みの worktree 名であればそれをターゲットにする
+        if target_path is None and arg in name_map:
+            target_path = name_map[arg]
         else:
             remaining_args.append(arg)
         i += 1
 
-    # Determine target path
-    if target_wt:
-        target_path = base_dir
-        if target_wt != "main":
-            worktrees_dir_name = config.get("worktrees_dir", ".worktrees")
-            target_path = base_dir / worktrees_dir_name / target_wt
-    else:
+    # ターゲット指定がない場合はカレントディレクトリ
+    if target_path is None:
         target_path = Path.cwd()
 
     diff_tool = config.get("diff", {}).get("tool", "git")
@@ -2100,6 +2099,36 @@ def cmd_diff(args: list[str]):
         else:
             print(
                 msg("error", "lumen not found. Please install it first."),
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    if diff_tool == "gitui":
+        if shutil.which("gitui"):
+            cmd = ["gitui"] + remaining_args
+            try:
+                subprocess.run(cmd, cwd=target_path)
+            except KeyboardInterrupt:
+                pass
+            return
+        else:
+            print(
+                msg("error", "gitui not found. Please install it first."),
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    if diff_tool == "tig":
+        if shutil.which("tig"):
+            cmd = ["tig"] + remaining_args
+            try:
+                subprocess.run(cmd, cwd=target_path)
+            except KeyboardInterrupt:
+                pass
+            return
+        else:
+            print(
+                msg("error", "tig not found. Please install it first."),
                 file=sys.stderr,
             )
             sys.exit(1)

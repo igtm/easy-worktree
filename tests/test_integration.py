@@ -232,7 +232,7 @@ class TestWtIntegration(unittest.TestCase):
         # Check .gitignore
         content = (test_dir / ".gitignore").read_text()
         self.assertIn(".worktrees/", content)
-        self.assertNotIn(".wt/", content)
+        self.assertIn(".wt/", content)
         self.assertIn("*.log", content)
 
     def test_10_list_pr(self):
@@ -850,6 +850,7 @@ touch hook_ran.txt
         (project_dir / "README.md").write_text("Hello")
         subprocess.run(["git", "add", "."], cwd=project_dir)
         subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=project_dir)
+        subprocess.run(["git", "branch", "-M", "main"], cwd=project_dir)
         self.run_wt(["init"], cwd=project_dir)
 
         # This should correctly use 'wt-parser-fix' as worktree name and 'touch parser_fixed.txt' as command
@@ -859,6 +860,77 @@ touch hook_ran.txt
         wt_dir = project_dir / ".worktrees" / "wt-parser-fix"
         self.assertTrue(wt_dir.exists(), "Worktree not created")
         self.assertTrue((wt_dir / "parser_fixed.txt").exists(), "Command failed to run in correct worktree")
+
+    def test_24_diff_with_worktree_name(self):
+        """Test 'wt diff <worktree_name>' correctly identifies the worktree"""
+        project_dir = self.test_dir / "diff-test"
+        if project_dir.exists():
+            shutil.rmtree(project_dir)
+        project_dir.mkdir()
+        subprocess.run(["git", "init"], cwd=project_dir)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=project_dir)
+        subprocess.run(["git", "config", "user.name", "Test User"], cwd=project_dir)
+        (project_dir / "README.md").write_text("Initial")
+        subprocess.run(["git", "add", "."], cwd=project_dir)
+        subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=project_dir)
+        subprocess.run(["git", "branch", "-M", "main"], cwd=project_dir)
+        self.run_wt(["init"], cwd=project_dir)
+
+        # Create a worktree
+        self.run_wt(["add", "diff-wt"], cwd=project_dir)
+        wt_dir = project_dir / ".worktrees" / "diff-wt"
+        
+        # Modify a file in the worktree
+        (wt_dir / "README.md").write_text("Modified in WT")
+        
+        print("\nTesting wt diff diff-wt...")
+        # Run diff from the PROJECT root but specifying the worktree name
+        result = self.run_wt(["diff", "diff-wt"], cwd=project_dir)
+        
+        self.assertEqual(result.returncode, 0)
+        # It should show the diff between 'main' and current changes
+        self.assertIn("-Initial", result.stdout)
+        self.assertIn("+Modified in WT", result.stdout)
+
+    def test_25_diff_config_global(self):
+        """Test if 'wt config diff.tool' global setting is respected"""
+        project_dir = self.test_dir / "diff-global-test"
+        if project_dir.exists():
+            shutil.rmtree(project_dir)
+        project_dir.mkdir()
+        subprocess.run(["git", "init"], cwd=project_dir)
+        (project_dir / "README.md").write_text("Hello")
+        subprocess.run(["git", "add", "."], cwd=project_dir)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=project_dir)
+        subprocess.run(["git", "branch", "-M", "main"], cwd=project_dir)
+        self.run_wt(["init"], cwd=project_dir)
+
+        # Mock gitui to be "found"
+        bin_dir = self.test_dir / "bin"
+        bin_dir.mkdir(exist_ok=True, parents=True)
+        gitui_mock = bin_dir / "gitui"
+        gitui_mock.write_text("#!/bin/sh\necho 'MOCK GITUI RAN'\n")
+        gitui_mock.chmod(0o755)
+
+        # Add bin_dir to PATH
+        original_env = os.environ.copy()
+        os.environ["PATH"] = f"{bin_dir}:{os.environ['PATH']}"
+        
+        try:
+            # Set global diff tool
+            self.run_wt(["config", "--global", "diff.tool", "gitui"], cwd=project_dir)
+            
+            print("\nTesting wt diff with global config...")
+            # Modify file to have something to diff
+            (project_dir / "README.md").write_text("Modified")
+            
+            result = self.run_wt(["diff"], cwd=project_dir)
+            
+            self.assertEqual(result.returncode, 0)
+            self.assertIn("MOCK GITUI RAN", result.stdout)
+        finally:
+            os.environ.clear()
+            os.environ.update(original_env)
 
     def test_24_global_git_dir_forms(self):
         """Test global --git-dir parsing for both forms"""
