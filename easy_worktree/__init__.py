@@ -40,6 +40,14 @@ MESSAGES = {
         "en": "Usage: wt select (sl) [<name>|-] [<command>...]",
         "ja": "使用方法: wt select (sl) [<名前>|-] [<コマンド>...]",
     },
+    "usage_diff": {
+        "en": "Usage: wt diff (df) [<name>] [args...]",
+        "ja": "使用方法: wt diff (df) [<名前>] [引数...]",
+    },
+    "usage_config": {
+        "en": "Usage: wt config [--global|--local] [<key> [<value>]]",
+        "ja": "使用方法: wt config [--global|--local] [<キー> [<値>]]",
+    },
     "usage_list": {
         "en": "Usage: wt list (ls) [--pr] [--quiet|-q] [--days N] [--merged] [--closed] [--all] [--sort created|last-commit|name|branch] [--asc|--desc]",
         "ja": "使用方法: wt list (ls) [--pr] [--quiet|-q] [--days N] [--merged] [--closed] [--all] [--sort created|last-commit|name|branch] [--asc|--desc]",
@@ -403,43 +411,74 @@ def get_wt_dir(base_dir: Path) -> Path:
 
 
 def load_config(base_dir: Path) -> dict:
-    """設定ファイルを読み込む"""
-    wt_dir = get_wt_dir(base_dir)
-    config_file = wt_dir / "config.toml"
-    local_config_file = wt_dir / "config.local.toml"
-
+    """設定ファイルを読み込む (Global -> Project -> Local)"""
     default_config = {
         "worktrees_dir": ".worktrees",
         "setup_files": [".env"],
         "setup_source_dir": None,
+        "diff": {"tool": "git"},
     }
 
-    if config_file.exists():
-        try:
-            with open(config_file, "r", encoding="utf-8") as f:
-                user_config = toml.load(f)
-                default_config.update(user_config)
-        except Exception as e:
-            print(msg("error", f"Failed to load config: {e}"), file=sys.stderr)
+    # 1. Global (XDG)
+    xdg_config_home = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    global_config_file = xdg_config_home / "easy-worktree" / "config.toml"
+    
+    # 2. Project
+    wt_dir = get_wt_dir(base_dir)
+    project_config_file = wt_dir / "config.toml"
+    
+    # 3. Local
+    local_config_file = wt_dir / "config.local.toml"
 
-    if local_config_file.exists():
-        try:
-            with open(local_config_file, "r", encoding="utf-8") as f:
-                local_config = toml.load(f)
-                default_config.update(local_config)
-        except Exception as e:
-            print(msg("error", f"Failed to load local config: {e}"), file=sys.stderr)
+    def merge_config(base, overlay):
+        for k, v in overlay.items():
+            if isinstance(v, dict) and k in base and isinstance(base[k], dict):
+                merge_config(base[k], v)
+            else:
+                base[k] = v
+
+    # Load order
+    for cfg_file in [global_config_file, project_config_file, local_config_file]:
+        if cfg_file.exists():
+            try:
+                with open(cfg_file, "r", encoding="utf-8") as f:
+                    user_config = toml.load(f)
+                    merge_config(default_config, user_config)
+            except Exception as e:
+                print(msg("error", f"Failed to load config {cfg_file}: {e}"), file=sys.stderr)
 
     return default_config
 
 
 def save_config(base_dir: Path, config: dict):
-    """設定ファイルを保存する"""
+    """(Deprecated) Use save_config_to_file instead."""
     wt_dir = get_wt_dir(base_dir)
     wt_dir.mkdir(exist_ok=True)
     config_file = wt_dir / "config.toml"
+    save_config_to_file(config_file, config)
 
-    with open(config_file, "w", encoding="utf-8") as f:
+
+def save_config_to_file(file_path: Path, config_updates: dict):
+    """既存の設定を維持しつつ、DEEPマージして保存する"""
+    config = {}
+    if file_path.exists():
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                config = toml.load(f)
+        except Exception:
+            pass
+
+    def deep_merge(target, source):
+        for k, v in source.items():
+            if isinstance(v, dict) and k in target and isinstance(target[k], dict):
+                deep_merge(target[k], v)
+            else:
+                target[k] = v
+
+    deep_merge(config, config_updates)
+    
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(file_path, "w", encoding="utf-8") as f:
         toml.dump(config, f)
 
 
@@ -2010,6 +2049,176 @@ def cmd_list(args: list[str]):
         print()
 
 
+def cmd_diff(args: list[str]):
+    """wt diff (df) [<name>] [args...] - Show changes"""
+    base_dir = find_base_dir()
+    if not base_dir:
+        print(msg("error", msg("base_not_found")), file=sys.stderr)
+        sys.exit(1)
+
+    config = load_config(base_dir)
+    worktrees = get_worktree_info(base_dir)
+    names = []
+    for wt in worktrees:
+        p = Path(wt["path"])
+        name = "main" if p == base_dir else p.name
+        names.append(name)
+
+    target_wt = None
+    remaining_args = []
+
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if target_wt is None and arg in names:
+            target_wt = arg
+        else:
+            remaining_args.append(arg)
+        i += 1
+
+    # Determine target path
+    if target_wt:
+        target_path = base_dir
+        if target_wt != "main":
+            worktrees_dir_name = config.get("worktrees_dir", ".worktrees")
+            target_path = base_dir / worktrees_dir_name / target_wt
+    else:
+        target_path = Path.cwd()
+
+    diff_tool = config.get("diff", {}).get("tool", "git")
+
+    if diff_tool == "lumen":
+        # Use lumen
+        if shutil.which("lumen"):
+            # Include --watch by default
+            cmd = ["lumen", "diff", "--watch"] + remaining_args
+            try:
+                subprocess.run(cmd, cwd=target_path)
+            except KeyboardInterrupt:
+                pass
+            return
+        else:
+            print(
+                msg("error", "lumen not found. Please install it first."),
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    # git diff
+    if not remaining_args:
+        # Default behavior: diff against base branch
+        base_branch = get_default_branch(base_dir)
+        if base_branch:
+            # Check if we are on a different branch
+            res_curr = run_command(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=target_path,
+                check=False,
+                apply_global_git_dir=False,
+            )
+            curr_branch = res_curr.stdout.strip() if res_curr.returncode == 0 else ""
+
+            if curr_branch and curr_branch != base_branch:
+                remaining_args = [base_branch]
+
+    cmd = ["git", "diff"] + remaining_args
+    try:
+        # Use sys.stdout/stderr to ensure capture in tests and environments
+        subprocess.run(cmd, cwd=target_path, stdout=sys.stdout, stderr=sys.stderr)
+    except KeyboardInterrupt:
+        pass
+
+
+def cmd_config(args: list[str]):
+    """wt config [--global|--local] [<key> [<value>]]"""
+    base_dir = find_base_dir()
+    # base_dir is optional for --global
+    
+    is_global = "--global" in args
+    is_local = "--local" in args
+    remaining_args = [a for a in args if a not in ["--global", "--local"]]
+
+    if is_global:
+        xdg_config_home = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+        target_file = xdg_config_home / "easy-worktree" / "config.toml"
+    elif is_local:
+        if not base_dir:
+            print(msg("error", msg("base_not_found")), file=sys.stderr)
+            sys.exit(1)
+        target_file = get_wt_dir(base_dir) / "config.local.toml"
+    else:
+        # Default is project config
+        if not base_dir:
+            if not is_global:
+                print(msg("error", msg("base_not_found")), file=sys.stderr)
+                sys.exit(1)
+        target_file = get_wt_dir(base_dir) / "config.toml"
+
+    if not remaining_args:
+        # Show all (merged)
+        config = load_config(base_dir) if base_dir else load_config(Path("/")) # Dummy for global-only
+        print(toml.dumps(config).strip())
+        return
+
+    key = remaining_args[0]
+    if len(remaining_args) == 1:
+        # Get value
+        if is_global or is_local:
+            # Load specific file
+            config = {}
+            if target_file.exists():
+                try:
+                    with open(target_file, "r", encoding="utf-8") as f:
+                        config = toml.load(f)
+                except Exception:
+                    pass
+        else:
+            # Merged config
+            config = load_config(base_dir) if base_dir else load_config(Path("/"))
+            
+        parts = key.split(".")
+        val = config
+        for p in parts:
+            if isinstance(val, dict) and p in val:
+                val = val[p]
+            else:
+                val = None
+                break
+        if val is not None:
+            if isinstance(val, (dict, list)):
+                print(toml.dumps({key: val}).strip())
+            else:
+                print(val)
+        return
+
+    # Set value
+    value = remaining_args[1]
+    
+    # Simple type conversion
+    if value.lower() == "true":
+        value = True
+    elif value.lower() == "false":
+        value = False
+    elif value.isdigit():
+        value = int(value)
+
+    # Convert dot key to nested dict
+    parts = key.split(".")
+    update = {}
+    curr = update
+    for p in parts[:-1]:
+        curr[p] = {}
+        curr = curr[p]
+    curr[parts[-1]] = value
+
+    try:
+        save_config_to_file(target_file, update)
+        # print(f"Updated {target_file}")
+    except Exception as e:
+        print(msg("error", f"Failed to save config: {e}"), file=sys.stderr)
+        sys.exit(1)
+
+
 def cmd_remove(args: list[str]):
     """wt rm/remove <work_name> - Remove a worktree"""
     if len(args) < 1:
@@ -2513,6 +2722,8 @@ def show_help():
         print(
             f"  {'list (ls) [--pr] [--quiet|-q] [--days N] [--merged] [--closed] [--all] [--sort ...] [--asc|--desc]':<55} - worktree 一覧を表示"
         )
+        print(f"  {'diff (df) [<作業名>] [引数...]':<55} - 変更を表示 (git diff)")
+        print(f"  {'config [<キー> [<値>]] [--global|--local]':<55} - 設定の取得/設定")
         print(f"  {'co/checkout <作業名>':<55} - worktree のパスを表示")
         print(f"  {'current (cur)':<55} - 現在の worktree 名を表示")
         print(
@@ -2552,6 +2763,8 @@ def show_help():
         print(
             f"  {'list (ls) [--pr] [--quiet|-q] [--days N] [--merged] [--closed] [--all] [--sort ...] [--asc|--desc]':<55} - List worktrees"
         )
+        print(f"  {'diff (df) [<name>] [args...]':<55} - Show changes (git diff)")
+        print(f"  {'config [<key> [<value>]] [--global|--local]':<55} - Get/Set configuration")
         print(f"  {'co/checkout <work_name>':<55} - Show path to a worktree")
         print(f"  {'current (cur)':<55} - Show current worktree name")
         print(
@@ -2575,7 +2788,7 @@ def show_help():
 
 def show_version():
     """Show version information"""
-    print("easy-worktree version 0.2.1")
+    print("easy-worktree version 0.2.4")
 
 
 def parse_global_args(argv: list[str]) -> list[str]:
@@ -2634,6 +2847,10 @@ def main():
         cmd_add(args)
     elif command in ["list", "ls"]:
         cmd_list(args)
+    elif command in ["diff", "df"]:
+        cmd_diff(args)
+    elif command == "config":
+        cmd_config(args)
     elif command in ["rm", "remove"]:
         cmd_remove(args)
     elif command in ["clean", "cl"]:
