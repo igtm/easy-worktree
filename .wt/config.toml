@@ -1,0 +1,2 @@
+worktrees_dir = ".worktrees"
+setup_files = [ ".env",]
