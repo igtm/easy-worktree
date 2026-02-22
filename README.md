@@ -216,6 +216,42 @@ Initialize the current worktree by copying required files and running the `post-
 wt setup
 ```
 
+#### Diff Tool (shortcut: `df`)
+
+```bash
+wt diff
+wt diff <name>
+```
+
+By default, it runs `git diff`. You can configure it to use `lumen` (a rich diff viewer):
+
+```bash
+wt config diff.tool lumen --global
+```
+
+When configured, `wt diff` will run `lumen diff --watch` in the target worktree.
+
+#### Configuration Management (shortcut: `config`)
+
+Manage settings globally or locally:
+
+```bash
+wt config <key> <value> [--global|--local]
+wt config <key>           # Get value
+wt config                 # Show current merged configuration
+```
+
+#### TUI Companion
+
+For a more visual experience, check out [easy-worktree-tui](https://github.com/igtm/easy-worktree-tui).
+
+```bash
+pip install easy-worktree-tui
+wtt
+```
+
+It provides a side-by-side view of worktrees and their diffs, with interactive add/remove features.
+
 #### Visualization and External Tools
 
 When you switch to a worktree using `wt select`, the following features are automatically enabled:

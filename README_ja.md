@@ -215,6 +215,42 @@ wt rm feature-1
 wt setup
 ```
 
+#### Diff ツール (ショートカット: `df`)
+
+```bash
+wt diff
+wt diff <name>
+```
+
+デフォルトでは `git diff` を実行しますが、設定により `lumen` (リッチな diff ビューア) を使用するように変更できます：
+
+```bash
+wt config diff.tool lumen --global
+```
+
+この設定を行うと、`wt diff` 実行時にターゲットのワークツリー内で `lumen diff --watch` が起動します。
+
+#### 設定管理 (ショートカット: `config`)
+
+グローバルまたはプロジェクトごとの設定を管理します：
+
+```bash
+wt config <key> <value> [--global|--local]
+wt config <key>           # 値の取得
+wt config                 # 現在のマージされた設定を表示
+```
+
+#### TUI Companion
+
+より視覚的な操作のために、[easy-worktree-tui](https://github.com/igtm/easy-worktree-tui) を用意しています。
+
+```bash
+pip install easy-worktree-tui
+wtt
+```
+
+ワークツリーと Diff のサイドバイサイド表示や、インタラクティブな追加・削除が可能です。
+
 #### 可視化と外部ツールとの連携
 
 `wt select` でワークツリーに切り替えた際、以下の機能が自動的に有効になります：
