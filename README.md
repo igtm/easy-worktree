@@ -111,11 +111,25 @@ You can also specify a base branch:
 wt add feature-1 main
 ```
 
-If you are operating from a bare repository, pass `--git-dir` globally:
+#### Execution in specific directory (`-C` option)
+
+As with `git -C <path>`, you can change the current working directory to the specified path before execution:
+
+```bash
+wt -C /path/to/repo list
+```
+
+#### Working with a bare repository
+
+When using a bare repository, pass `--git-dir` globally:
 
 ```bash
 wt --git-dir=/path/to/sandbox.git add feature-1 main
 ```
+
+**Deployment rules for bare repositories:**
+When using a bare repository, worktrees are automatically deployed **alongside the base worktree (e.g., inside `repo/`)**, not inside the git directory (`repo.git/`).
+Setting `worktrees_dir` to an empty string (`""`) will create worktrees directly in the parent directory.
 
 #### Skip Setup
 
@@ -342,7 +356,7 @@ Notes:
 #### Command Reference
 
 ```bash
-wt [--git-dir <path> | --git-dir=<path>] <command> ...
+wt [-C <path>] [--git-dir <path> | --git-dir=<path>] <command> ...
 wt add <work_name> [<base_branch>] [--skip-setup|--no-setup] [--select [<command>...]]
 wt select [<name>|-] [<command>...]
 wt run <name> <command>...
@@ -369,6 +383,8 @@ setup_source_dir = ""           # Optional. Override setup file source directory
 When empty, `wt` auto-detects the source directory:
 - normal repository: repository root
 - bare repository: default-branch worktree (fallback to first non-bare worktree)
+
+The `worktrees_dir` setting is respected for bare repositories, but the base path is automatically adjusted to the parent directory of the base worktree instead of inside `repo.git/`.
 
 #### Local Configuration Override
 

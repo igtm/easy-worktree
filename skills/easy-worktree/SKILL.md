@@ -92,13 +92,16 @@ wt clean --merged
 
 ## bare リポジトリでの使い方
 
-`--git-dir` をグローバル引数として付けます。
+`--git-dir` をグローバル引数として付けます。また、`-C` を使って特定のパスで実行することも可能です。
 
 ```bash
 wt --git-dir=/path/to/sandbox.git init
 wt --git-dir=/path/to/sandbox.git add feat/abc main
-wt --git-dir=/path/to/sandbox.git list --pr
+wt -C /other/repo list
 ```
+
+**bare rep での展開先について:**
+bare リポジトリでは、新しく追加されるワークツリーは `repo.git/` の内部ではなく、ベースワークツリーと同じ親ディレクトリ（例: `repo/` 直下や `repo/.worktrees/`）に作成されます。
 
 ## 参照ドキュメント
 

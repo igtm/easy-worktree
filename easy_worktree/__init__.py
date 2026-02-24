@@ -2801,6 +2801,7 @@ def show_help():
         print("オプション:")
         print(f"  {'-h, --help':<55} - このヘルプメッセージを表示")
         print(f"  {'-v, --version':<55} - バージョン情報を表示")
+        print(f"  {'-C <path>':<55} - 指定したディレクトリに移動して実行")
         print(f"  {'--git-dir <path>':<55} - Git ディレクトリを明示指定")
     else:
         print("easy-worktree - Simple CLI tool for managing Git worktrees")
@@ -2840,12 +2841,13 @@ def show_help():
         print("Options:")
         print(f"  {'-h, --help':<55} - Show this help message")
         print(f"  {'-v, --version':<55} - Show version information")
+        print(f"  {'-C <path>':<55} - Run as if wt was started in <path> instead of the current working directory")
         print(f"  {'--git-dir <path>':<55} - Explicitly set git directory")
 
 
 def show_version():
     """Show version information"""
-    print("easy-worktree version 0.2.4")
+    print("easy-worktree version 0.2.7")
 
 
 def parse_global_args(argv: list[str]) -> list[str]:
@@ -2867,6 +2869,19 @@ def parse_global_args(argv: list[str]) -> list[str]:
                 print(msg("error", "Missing value for --git-dir"), file=sys.stderr)
                 sys.exit(1)
             GLOBAL_GIT_DIR = Path(argv[i + 1]).expanduser().resolve()
+            i += 1
+        elif arg == "-C":
+            if i + 1 >= len(argv):
+                print(msg("error", "Missing value for -C"), file=sys.stderr)
+                sys.exit(1)
+            path = Path(argv[i + 1]).expanduser().resolve()
+            if not path.exists():
+                print(msg("error", f"Directory does not exist: {path}"), file=sys.stderr)
+                sys.exit(1)
+            if not path.is_dir():
+                print(msg("error", f"Not a directory: {path}"), file=sys.stderr)
+                sys.exit(1)
+            os.chdir(path)
             i += 1
         else:
             cleaned.append(arg)

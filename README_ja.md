@@ -109,11 +109,25 @@ my-repo/ (main)
 wt add feature-1 main
 ```
 
-bare リポジトリで操作する場合は、グローバル引数 `--git-dir` を使います：
+#### 指定ディレクトリでの実行 (`-C` オプション)
+
+`git -C <path>` と同様に、実行前にカレントディレクトリを指定したパスへ変更できます：
+
+```bash
+wt -C /path/to/repo list
+```
+
+#### bare リポジトリで操作する場合
+
+ベアリポジトリを使用する場合は、グローバル引数 `--git-dir` を使います：
 
 ```bash
 wt --git-dir=/path/to/sandbox.git add feature-1 main
 ```
+
+**bare リポジトリでの展開規則:**
+bare リポジトリで使用する場合、ワークツリーは git ディレクトリ（`repo.git/`）の内部ではなく、**ベースワークツリーと同じ親ディレクトリ（例: `repo/`）**に自動的に展開されます。
+また、`worktrees_dir` 設定を空文字（`""`）に設定すると、親ディレクトリの直下にワークツリーが作成されます。
 
 #### セットアップをスキップする
 
@@ -341,7 +355,7 @@ wt clean --all
 #### コマンド引数リファレンス
 
 ```bash
-wt [--git-dir <path> | --git-dir=<path>] <command> ...
+wt [-C <path>] [--git-dir <path> | --git-dir=<path>] <command> ...
 wt add <work_name> [<base_branch>] [--skip-setup|--no-setup] [--select [<command>...]]
 wt select [<name>|-] [<command>...]
 wt run <name> <command>...
@@ -367,6 +381,8 @@ setup_source_dir = ""           # 任意。セットアップコピー元を明�
 空の場合は自動判定されます：
 - 通常リポジトリ: リポジトリルート
 - bare リポジトリ: デフォルトブランチの worktree（なければ最初の non-bare worktree）
+
+bare リポジトリにおいても `worktrees_dir` 設定は尊重されますが、展開先の起点は `repo.git/` 内部ではなく、常にベースワークツリーの親ディレクトリに調整されます。
 
 #### ローカル設定の上書き
 
