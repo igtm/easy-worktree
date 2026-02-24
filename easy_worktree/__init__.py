@@ -1175,12 +1175,63 @@ def add_worktree(
     elif branch_to_use:
         # checkout specified branch
         final_branch_name = branch_to_use
-        print(msg("creating_worktree", worktree_path), file=sys.stderr)
-        result = run_command(
-            ["git", "worktree", "add", str(worktree_path), final_branch_name],
-            cwd=base_dir,
-            check=False,
-        )
+        
+        # Check if branch_to_use is a remote branch (e.g., origin/xxx)
+        if "/" in branch_to_use:
+            parts = branch_to_use.split("/", 1)
+            remote_name = parts[0]
+            short_branch_name = parts[1]
+            
+            # Check if it's a known remote
+            remotes_result = run_command(["git", "remote"], cwd=base_dir, check=False)
+            if remotes_result.returncode == 0 and remote_name in remotes_result.stdout.split():
+                # It's a remote branch. Check if local branch already exists
+                check_local = run_command(
+                    ["git", "rev-parse", "--verify", short_branch_name],
+                    cwd=base_dir,
+                    check=False,
+                )
+                if check_local.returncode != 0:
+                    # Local doesn't exist, create tracking branch
+                    final_branch_name = short_branch_name
+                    print(msg("creating_worktree", worktree_path), file=sys.stderr)
+                    print(f"Creating tracking branch {final_branch_name} for {branch_to_use}...", file=sys.stderr)
+                    result = run_command(
+                        ["git", "worktree", "add", "-b", final_branch_name, str(worktree_path), branch_to_use],
+                        cwd=base_dir,
+                        check=False,
+                    )
+                else:
+                    # Local already exists. 
+                    # If we use 'git worktree add <path> <remote-branch>', it becomes detached.
+                    # If we use 'git worktree add <path> <local-branch>', it uses local.
+                    # The user specifically asked for origin/xxx, so they might want the remote version.
+                    # But if local exists, usually we want to use the local one or update it.
+                    # For now, let's use the local one if it exists to avoid conflicts,
+                    # but notify the user.
+                    final_branch_name = short_branch_name
+                    print(msg("creating_worktree", worktree_path), file=sys.stderr)
+                    print(f"Local branch {final_branch_name} already exists. Using it instead of {branch_to_use}.", file=sys.stderr)
+                    result = run_command(
+                        ["git", "worktree", "add", str(worktree_path), final_branch_name],
+                        cwd=base_dir,
+                        check=False,
+                    )
+            else:
+                # Not a remote branch, or remote not found. Just try to add it.
+                print(msg("creating_worktree", worktree_path), file=sys.stderr)
+                result = run_command(
+                    ["git", "worktree", "add", str(worktree_path), final_branch_name],
+                    cwd=base_dir,
+                    check=False,
+                )
+        else:
+            print(msg("creating_worktree", worktree_path), file=sys.stderr)
+            result = run_command(
+                ["git", "worktree", "add", str(worktree_path), final_branch_name],
+                cwd=base_dir,
+                check=False,
+            )
     else:
         # auto detect
         # use work_name as branch name
@@ -1198,23 +1249,28 @@ def add_worktree(
         )
 
         if check_local.returncode == 0 or check_remote.returncode == 0:
-            if check_remote.returncode == 0:
+            if check_local.returncode == 0:
                 print(msg("creating_worktree", worktree_path), file=sys.stderr)
+                result = run_command(
+                    ["git", "worktree", "add", str(worktree_path), final_branch_name],
+                    cwd=base_dir,
+                    check=False,
+                )
+            else:
+                # Only remote exists. Create tracking branch.
+                # Use final_branch_name (which is work_name) as the local branch name
+                print(msg("creating_worktree", worktree_path), file=sys.stderr)
+                print(f"Creating tracking branch {final_branch_name} for origin/{final_branch_name}...", file=sys.stderr)
                 result = run_command(
                     [
                         "git",
                         "worktree",
                         "add",
+                        "-b",
+                        final_branch_name,
                         str(worktree_path),
                         f"origin/{final_branch_name}",
                     ],
-                    cwd=base_dir,
-                    check=False,
-                )
-            else:
-                print(msg("creating_worktree", worktree_path), file=sys.stderr)
-                result = run_command(
-                    ["git", "worktree", "add", str(worktree_path), final_branch_name],
                     cwd=base_dir,
                     check=False,
                 )
