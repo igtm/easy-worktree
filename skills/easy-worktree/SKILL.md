@@ -1,9 +1,9 @@
 ---
-name: eaasy-worktree
+name: easy-worktree
 description: easy-worktree リポジトリで `wt` コマンドを使って worktree を作成・切替・整理するための実践ガイドです。基本操作、主要オプション、よく使う運用フローをまとめています。
 ---
 
-# eaasy-worktree Skill
+# easy-worktree Skill
 
 このスキルは、このリポジトリで `wt` コマンドを使うときの最小手順と運用パターンを提供します。
 

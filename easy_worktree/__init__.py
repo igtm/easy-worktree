@@ -1108,9 +1108,21 @@ def add_worktree(
 
     # settings loading
     config = load_config(base_dir)
+    is_bare = is_bare_repository(base_dir)
     worktrees_dir_name = config.get("worktrees_dir", ".worktrees")
-    worktrees_dir = base_dir / worktrees_dir_name
-    worktrees_dir.mkdir(exist_ok=True)
+    
+    if is_bare:
+        # For bare repo, deploy worktrees alongside the base worktree
+        wt_home = require_wt_home_dir(base_dir)
+        base_parent = wt_home.parent
+        if worktrees_dir_name:
+            worktrees_dir = base_parent / worktrees_dir_name
+            worktrees_dir.mkdir(exist_ok=True)
+        else:
+            worktrees_dir = base_parent
+    else:
+        worktrees_dir = base_dir / worktrees_dir_name
+        worktrees_dir.mkdir(exist_ok=True)
 
     # worktree path decision
     worktree_path = worktrees_dir / work_name
@@ -2435,7 +2447,15 @@ def cmd_run(args: list[str]):
     if work_name != "main":
         config = load_config(base_dir)
         worktrees_dir_name = config.get("worktrees_dir", ".worktrees")
-        target_path = base_dir / worktrees_dir_name / work_name
+        if is_bare_repository(base_dir):
+            wt_home = require_wt_home_dir(base_dir)
+            base_parent = wt_home.parent
+            if worktrees_dir_name:
+                target_path = base_parent / worktrees_dir_name / work_name
+            else:
+                target_path = base_parent / work_name
+        else:
+            target_path = base_dir / worktrees_dir_name / work_name
 
     if not target_path.exists():
         print(msg("error", msg("select_not_found", work_name)), file=sys.stderr)
@@ -2482,7 +2502,15 @@ def switch_selection(target, base_dir, current_sel, last_sel_file, command: list
     if target != "main":
         config = load_config(base_dir)
         worktrees_dir_name = config.get("worktrees_dir", ".worktrees")
-        target_path = base_dir / worktrees_dir_name / target
+        if is_bare_repository(base_dir):
+            wt_home = require_wt_home_dir(base_dir)
+            base_parent = wt_home.parent
+            if worktrees_dir_name:
+                target_path = base_parent / worktrees_dir_name / target
+            else:
+                target_path = base_parent / target
+        else:
+            target_path = base_dir / worktrees_dir_name / target
 
     if not target_path.exists():
         print(msg("error", msg("select_not_found", target)), file=sys.stderr)

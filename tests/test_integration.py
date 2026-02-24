@@ -994,7 +994,12 @@ touch hook_ran.txt
         result = self.run_wt([f"--git-dir={bare_repo}", "add", "feature-bare"], cwd=self.test_dir)
         self.assertEqual(result.returncode, 0, f"Bare add failed: {result.stderr}")
 
-        feature_wt = bare_repo / ".worktrees" / "feature-bare"
+        # Default worktrees_dir is ".worktrees"
+        # Since main_wt is self.test_dir / "bare-source-main",
+        # the base_parent is self.test_dir.
+        # So "feature-bare" should be at self.test_dir / ".worktrees" / "feature-bare"
+        feature_wt = self.test_dir / ".worktrees" / "feature-bare"
+        self.assertTrue(feature_wt.exists(), f"feature worktree should be at {feature_wt}")
         self.assertTrue((feature_wt / "shared.txt").exists(), "setup file should be copied from main worktree")
         self.assertEqual((feature_wt / "shared.txt").read_text(), "from-main-worktree")
 
@@ -1063,8 +1068,9 @@ touch hook_ran.txt
         result = self.run_wt([f"--git-dir={bare_repo}", "add", "feature-no-source"], cwd=self.test_dir)
         self.assertEqual(result.returncode, 0, f"Add should succeed even when setup file is missing: {result.stderr}")
 
-        wt_dir = bare_repo / ".worktrees" / "feature-no-source"
-        self.assertTrue(wt_dir.exists(), "worktree should still be created")
+        # Similarly, base worktree parent is self.test_dir, and default is .worktrees
+        wt_dir = self.test_dir / ".worktrees" / "feature-no-source"
+        self.assertTrue(wt_dir.exists(), f"worktree should be at {wt_dir}")
         self.assertFalse((wt_dir / "not-found.txt").exists(), "setup file should not be copied")
 
     def test_28_created_time_is_pinned_in_metadata(self):
