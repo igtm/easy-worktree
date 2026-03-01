@@ -400,6 +400,8 @@ setup_files = [".env"]          # 自動セットアップでコピーするフ�
 setup_source_dir = ""           # 任意。セットアップコピー元を明示指定
 ```
 
+> **Note:** `worktrees_dir` には `{repo_name}` というテンプレート変数が使えます。例えば `worktrees_dir = ".worktrees-{repo_name}"` と設定すると、`easy-worktree` リポジトリでは `.worktrees-easy-worktree` に作成されます。グローバル設定で活用すると便利です。
+
 `setup_source_dir` は相対パス（ベースディレクトリ基準）/絶対パスの両方に対応します。
 空の場合は自動判定されます：
 - 通常リポジトリ: リポジトリルート

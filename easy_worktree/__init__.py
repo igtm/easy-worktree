@@ -447,6 +447,21 @@ def load_config(base_dir: Path) -> dict:
             except Exception as e:
                 print(msg("error", f"Failed to load config {cfg_file}: {e}"), file=sys.stderr)
 
+    # Resolve templates (e.g., {repo_name})
+    repo_name = base_dir.name if base_dir and base_dir.name else ""
+    if repo_name.endswith(".git"):
+        repo_name = repo_name[:-4]
+
+    def resolve_templates(config_dict):
+        for k, v in config_dict.items():
+            if isinstance(v, dict):
+                resolve_templates(v)
+            elif isinstance(v, str) and "{repo_name}" in v:
+                config_dict[k] = v.replace("{repo_name}", repo_name)
+    
+    if repo_name:
+        resolve_templates(default_config)
+
     return default_config
 
 
@@ -2905,7 +2920,7 @@ def show_help():
 
 def show_version():
     """Show version information"""
-    print("easy-worktree version 0.2.11")
+    print("easy-worktree version 0.2.12")
 
 
 def parse_global_args(argv: list[str]) -> list[str]:

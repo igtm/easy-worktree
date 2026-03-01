@@ -402,6 +402,8 @@ setup_files = [".env"]          # Files to auto-copy during setup
 setup_source_dir = ""           # Optional. Override setup file source directory
 ```
 
+> **Note:** `worktrees_dir` supports the `{repo_name}` template variable. For example, setting `worktrees_dir = ".worktrees-{repo_name}"` will create worktrees in `.worktrees-easy-worktree` for the `easy-worktree` repository. This is especially useful for global configurations.
+
 `setup_source_dir` supports relative paths (resolved from repository base) or absolute paths.
 When empty, `wt` auto-detects the source directory:
 - normal repository: repository root
