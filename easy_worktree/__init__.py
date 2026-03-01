@@ -2905,7 +2905,7 @@ def show_help():
 
 def show_version():
     """Show version information"""
-    print("easy-worktree version 0.2.10")
+    print("easy-worktree version 0.2.11")
 
 
 def parse_global_args(argv: list[str]) -> list[str]:
