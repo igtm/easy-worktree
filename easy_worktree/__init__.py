@@ -411,7 +411,7 @@ def get_wt_dir(base_dir: Path) -> Path:
 
 
 def load_config(base_dir: Path) -> dict:
-    """設定ファイルを読み込む (Global -> Project -> Local)"""
+    """設定ファイルを読み込む (Project -> Local -> Global)"""
     default_config = {
         "worktrees_dir": ".worktrees",
         "setup_files": [".env"],
@@ -419,16 +419,16 @@ def load_config(base_dir: Path) -> dict:
         "diff": {"tool": "git"},
     }
 
-    # 1. Global (XDG)
-    xdg_config_home = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-    global_config_file = xdg_config_home / "easy-worktree" / "config.toml"
-    
-    # 2. Project
+    # 1. Project
     wt_dir = get_wt_dir(base_dir)
     project_config_file = wt_dir / "config.toml"
     
-    # 3. Local
+    # 2. Local
     local_config_file = wt_dir / "config.local.toml"
+
+    # 3. Global (XDG)
+    xdg_config_home = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    global_config_file = xdg_config_home / "easy-worktree" / "config.toml"
 
     def merge_config(base, overlay):
         for k, v in overlay.items():
@@ -438,7 +438,7 @@ def load_config(base_dir: Path) -> dict:
                 base[k] = v
 
     # Load order
-    for cfg_file in [global_config_file, project_config_file, local_config_file]:
+    for cfg_file in [project_config_file, local_config_file, global_config_file]:
         if cfg_file.exists():
             try:
                 with open(cfg_file, "r", encoding="utf-8") as f:
@@ -2852,6 +2852,7 @@ def show_help():
         print(
             f"  {'setup (su)':<55} - 作業ディレクトリを初期化（ファイルコピー・フック実行）"
         )
+        print(f"  {'doctor':<55} - システム情報と環境の確認")
         print(f"  {'completion <bash|zsh>':<55} - シェル補完スクリプトを出力")
         print()
         print("オプション:")
@@ -2892,6 +2893,7 @@ def show_help():
         print(
             f"  {'setup (su)':<55} - Setup worktree (copy files and run hooks)"
         )
+        print(f"  {'doctor':<55} - Show system information and check environment")
         print(f"  {'completion <bash|zsh>':<55} - Print shell completion script")
         print()
         print("Options:")
@@ -2903,7 +2905,7 @@ def show_help():
 
 def show_version():
     """Show version information"""
-    print("easy-worktree version 0.2.7")
+    print("easy-worktree version 0.2.10")
 
 
 def parse_global_args(argv: list[str]) -> list[str]:
@@ -2944,6 +2946,123 @@ def parse_global_args(argv: list[str]) -> list[str]:
         i += 1
 
     return cleaned
+
+
+def cmd_doctor(args: list[str]):
+    """wt doctor - Show system information and check environment"""
+    print("🩺 easy-worktree doctor")
+    print("=======================")
+
+    print("\n[System]")
+    print(f"Python: {sys.version.split(' ')[0]}")
+    
+    # Check Git
+    git_path = shutil.which("git")
+    if git_path:
+        out = run_command(["git", "--version"], check=False).stdout.strip()
+        print(f"Git: {out} ({git_path})")
+    else:
+        print("Git: Not found ❌")
+        
+    # Check gh
+    gh_path = shutil.which("gh")
+    if gh_path:
+        out = run_command(["gh", "--version"], check=False).stdout.strip().splitlines()[0]
+        print(f"GitHub CLI (gh): {out} ({gh_path})")
+    else:
+        print("GitHub CLI (gh): Not found (Optional)")
+
+    # Check fzf
+    fzf_path = shutil.which("fzf")
+    if fzf_path:
+        out = run_command(["fzf", "--version"], check=False).stdout.strip().splitlines()[0]
+        print(f"fzf: {out} ({fzf_path})")
+    else:
+        print("fzf: Not found (Optional, used for interactive selection)")
+
+    # Check GitUI
+    gitui_path = shutil.which("gitui")
+    if gitui_path:
+        out = run_command(["gitui", "--version"], check=False).stdout.strip()
+        print(f"GitUI: {out} ({gitui_path})")
+    else:
+        print("GitUI: Not found (Optional, used for UI diffs)")
+
+    # Check Tig
+    tig_path = shutil.which("tig")
+    if tig_path:
+        out = run_command(["tig", "--version"], check=False).stdout.strip().splitlines()[0]
+        print(f"Tig: {out} ({tig_path})")
+    else:
+        print("Tig: Not found (Optional, used for UI diffs)")
+
+    print("\n[Environment]")
+    base_dir = find_base_dir()
+    if base_dir:
+        print(f"Project Root: {base_dir}")
+        is_bare = is_bare_repository(base_dir)
+        print(f"Repository Type: {'Bare' if is_bare else 'Normal'}")
+        
+        wt_home = get_wt_home_dir(base_dir)
+        print(f"WT Home: {wt_home if wt_home else 'Not found'}")
+        
+        wt_dir = get_wt_dir(base_dir) if wt_home else None
+        if wt_dir and wt_dir.exists():
+            print(f".wt Directory: {wt_dir} (Exists)")
+        else:
+            print(f".wt Directory: {wt_dir} (Not found ❌)")
+            
+        config = load_config(base_dir)
+        print(f"Active Config:")
+        print(f"  - worktrees_dir: {config.get('worktrees_dir', '.worktrees')}")
+        print(f"  - setup_files: {config.get('setup_files', ['.env'])}")
+        print(f"  - setup_source_dir: {config.get('setup_source_dir', 'Auto-detect')}")
+        print(f"  - diff.tool: {config.get('diff', {}).get('tool', 'git')}")
+    else:
+        print("Project Root: Not in a git repository")
+        
+    print("\n[Configuration Files]")
+    valid_root_keys = {"worktrees_dir", "setup_files", "setup_source_dir", "diff"}
+
+    def check_config_file(file_path: Path, label: str):
+        if not file_path.exists():
+            print(f"{label}: {file_path} (Not found)")
+            return
+        
+        print(f"{label}: {file_path} (Exists)")
+        try:
+            import toml
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = toml.load(f)
+                
+            if not data:
+                print("  (Empty)")
+                return
+                
+            for k, v in data.items():
+                if k not in valid_root_keys:
+                    print(f"  ⚠️  Warning: Unknown configuration key '{k}'")
+                else:
+                    if isinstance(v, dict) and k == "diff":
+                        print(f"  - {k}:")
+                        for sub_k, sub_v in v.items():
+                            if sub_k not in {"tool"}:
+                                print(f"    ⚠️  Warning: Unknown key 'diff.{sub_k}'")
+                            else:
+                                print(f"    - {sub_k}: {sub_v}")
+                    else:
+                        print(f"  - {k}: {v}")
+        except Exception as e:
+            print(f"  Error reading config: {e}")
+            
+    xdg_config_home = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    global_config_file = xdg_config_home / "easy-worktree" / "config.toml"
+    check_config_file(global_config_file, "Global Config")
+    
+    if base_dir and wt_home:
+        wt_dir = get_wt_dir(base_dir)
+        check_config_file(wt_dir / "config.toml", "Project Config")
+        check_config_file(wt_dir / "config.local.toml", "Local Config")
 
 
 def main():
@@ -2999,6 +3118,8 @@ def main():
         cmd_run(args)
     elif command == "completion":
         cmd_completion(args)
+    elif command == "doctor":
+        cmd_doctor(args)
     else:
         # その他のコマンドは git worktree にパススルー
         cmd_passthrough([command] + args)
