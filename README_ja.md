@@ -363,13 +363,36 @@ wt rm <work_name> [-f|--force]
 wt list [--pr] [--quiet|-q] [--days N] [--merged] [--closed] [--all] [--sort created|last-commit|name|branch] [--asc|--desc]
 wt clean [--days N] [--merged] [--closed] [--all]
 wt setup
+wt config [--global|--local] [<key> [<value>]]
+wt doctor
 wt completion <bash|zsh>
 ```
 
 
 ### 設定
 
-`.wt/config.toml` で挙動をカスタマイズできます：
+`easy-worktree` の設定は以下の3層構造になっており、上の層ほど優先して適用されます。
+
+1. **Global (`~/.config/easy-worktree/config.toml`)**: 全リポジトリに共通で適用されます。
+2. **Local (`.wt/config.local.toml`)**: ローカル環境でのみ上書きしたい設定（Gitにはコミットされません）。
+3. **Project (`.wt/config.toml`)**: リポジトリ全体で共有する設定。
+
+`wt config` コマンドを使うと、各層の設定を簡単に管理・確認できます。
+
+```bash
+# グローバルに設定する
+wt config --global worktrees_dir ".my_global_worktrees"
+
+# プロジェクトに設定する
+wt config worktrees_dir ".wt-project"
+
+# 全ての層をマージした現在の設定値を確認する
+wt config
+```
+
+#### 設定項目
+
+`config.toml` には以下の設定項目が指定できます。
 
 ```toml
 worktrees_dir = ".worktrees"   # worktree を作成するディレクトリ名
@@ -377,19 +400,19 @@ setup_files = [".env"]          # 自動セットアップでコピーするフ�
 setup_source_dir = ""           # 任意。セットアップコピー元を明示指定
 ```
 
-`setup_source_dir` は相対パス（ベースディレクトリ基準）/絶対パスの両方に対応します。  
+`setup_source_dir` は相対パス（ベースディレクトリ基準）/絶対パスの両方に対応します。
 空の場合は自動判定されます：
 - 通常リポジトリ: リポジトリルート
 - bare リポジトリ: デフォルトブランチの worktree（なければ最初の non-bare worktree）
 
 bare リポジトリにおいても `worktrees_dir` 設定は尊重されますが、展開先の起点は `repo.git/` 内部ではなく、常にベースワークツリーの親ディレクトリに調整されます。
 
-#### ローカル設定の上書き
+#### 環境チェック (doctor)
 
-`.wt/config.local.toml` を作成すると、設定をローカルでのみ上書きできます。このファイルは自動的に `.gitignore` に追加され、リポジトリにはコミットされません。
+`wt doctor` コマンドを実行すると、現在のシステム環境や依存ツール (Git, gh, fzf, gitui 等) の状態、適用中の設定値を確認できます。
+もし設定ファイルの中に無効な（使われていない）キーが含まれている場合は、警告も表示してくれます。
 
 #### `.wt/` ディレクトリの扱い
-
 - `.wt/` はワーキングツリー側に作成され、bare の git オブジェクトディレクトリ直下には作成しません。
 - 通常リポジトリでは、`.wt/` はリポジトリルートに作成されます。
 - `--git-dir=<path>` 指定時:

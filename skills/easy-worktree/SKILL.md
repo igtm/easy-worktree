@@ -55,7 +55,10 @@ exit
 - `wt diff [<name>] [args...]`
   - 対象 worktree で diff を確認します。ショートカット: `wt df ...`
 - `wt config [--global|--local] [key [value]]`
-  - 設定の確認・更新を行います。
+  - 設定の確認・更新を行います。優先順位は Global > Local > Project です。
+  - 例: `wt config --global worktrees_dir ".my_global_worktrees"`
+- `wt doctor`
+  - システム環境や依存ツール、設定ファイル（および無効キーの警告）を確認します。
 
 ## よく使う運用フロー
 

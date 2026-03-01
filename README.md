@@ -364,6 +364,8 @@ wt rm <work_name> [-f|--force]
 wt list [--pr] [--quiet|-q] [--days N] [--merged] [--closed] [--all] [--sort created|last-commit|name|branch] [--asc|--desc]
 wt clean [--days N] [--merged] [--closed] [--all]
 wt setup
+wt config [--global|--local] [<key> [<value>]]
+wt doctor
 wt completion <bash|zsh>
 ```
 
@@ -371,7 +373,28 @@ wt completion <bash|zsh>
 
 ### Configuration
 
-Customize behavior in `.wt/config.toml`:
+`easy-worktree` uses a 3-tier configuration system. Settings are merged in the following order of precedence (highest to lowest):
+
+1. **Global (`~/.config/easy-worktree/config.toml`)**: Applies to all repositories.
+2. **Local (`.wt/config.local.toml`)**: Overrides settings locally (git-ignored).
+3. **Project (`.wt/config.toml`)**: Shared settings for the repository.
+
+You can manage configuration easily with the `wt config` command:
+
+```bash
+# Set a value globally
+wt config --global worktrees_dir ".my_global_worktrees"
+
+# Set a value for the project
+wt config worktrees_dir ".wt-project"
+
+# View all merged configurations
+wt config
+```
+
+#### Settings
+
+Customize behavior in your `config.toml` files:
 
 ```toml
 worktrees_dir = ".worktrees"   # Directory where worktrees are created
@@ -386,9 +409,9 @@ When empty, `wt` auto-detects the source directory:
 
 The `worktrees_dir` setting is respected for bare repositories, but the base path is automatically adjusted to the parent directory of the base worktree instead of inside `repo.git/`.
 
-#### Local Configuration Override
+#### System Check
 
-You can create `.wt/config.local.toml` to override settings locally. This file is automatically added to `.gitignore` and ignores `config.toml` settings.
+You can use the `wt doctor` command to check your current environment, verify dependencies (Git, gh, fzf, gitui), and inspect which configuration values are actively applied, including warnings if any unknown configuration keys exist.
 
 #### `.wt/` Directory Behavior
 
