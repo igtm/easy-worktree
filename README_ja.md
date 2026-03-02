@@ -344,12 +344,13 @@ wt clean --all
 - `wt clean --days N`: 作成から `N` 日以上経過し、かつ clean な worktree を削除。
 - `wt clean --merged`: デフォルトブランチにマージ済み、または `gh pr list --state merged` に含まれるブランチの clean worktree を削除。
 - `wt clean --closed`: `gh pr list --state closed` に含まれるブランチの clean worktree を削除。
+- `wt clean ... --yes` / `wt clean ... -y`: 確認プロンプトをスキップ。
 
 補足：
 - ローカル変更のある worktree は削除されません。
 - main/base worktree は削除されません。
 - `--merged` では、default branch と同一 SHA かつ merged PR に載っていないブランチは安全のため削除しません。
-- `--all` 以外は確認プロンプトが出ます。
+- `--all` / `--yes` / `-y` 以外は確認プロンプトが出ます。
 - `Created` 表示は `$XDG_CONFIG_HOME/easy-worktree/` 配下のメタデータ固定値を使います（ファイルシステムの ctime を毎回直接参照しません）。
 
 #### コマンド引数リファレンス
@@ -361,7 +362,7 @@ wt select [<name>|-] [<command>...]
 wt run <name> <command>...
 wt rm <work_name> [-f|--force]
 wt list [--pr] [--quiet|-q] [--days N] [--merged] [--closed] [--all] [--sort created|last-commit|name|branch] [--asc|--desc]
-wt clean [--days N] [--merged] [--closed] [--all]
+wt clean [--days N] [--merged] [--closed] [--all] [--yes|-y]
 wt setup
 wt config [--global|--local] [<key> [<value>]]
 wt doctor

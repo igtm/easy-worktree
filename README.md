@@ -345,12 +345,13 @@ Deletion conditions are:
 - `wt clean --days N`: removes clean worktrees whose directory creation age is `>= N` days.
 - `wt clean --merged`: removes clean worktrees whose branch is merged into default branch, or is found in merged PR heads from `gh pr list --state merged`.
 - `wt clean --closed`: removes clean worktrees whose branch appears in closed PR heads from `gh pr list --state closed`.
+- `wt clean ... --yes` / `wt clean ... -y`: skips the confirmation prompt.
 
 Notes:
 - Worktrees with local changes are never removed by `wt clean`.
 - Main/base worktree is never removed.
 - For `--merged`, if branch SHA equals default branch SHA and it is not in merged PR heads, removal is skipped as a safeguard.
-- Confirmation prompt appears unless `--all` is specified.
+- Confirmation prompt appears unless `--all`, `--yes`, or `-y` is specified.
 - `Created` time is pinned from metadata under `$XDG_CONFIG_HOME/easy-worktree/` (not live filesystem ctime).
 
 #### Command Reference
@@ -362,7 +363,7 @@ wt select [<name>|-] [<command>...]
 wt run <name> <command>...
 wt rm <work_name> [-f|--force]
 wt list [--pr] [--quiet|-q] [--days N] [--merged] [--closed] [--all] [--sort created|last-commit|name|branch] [--asc|--desc]
-wt clean [--days N] [--merged] [--closed] [--all]
+wt clean [--days N] [--merged] [--closed] [--all] [--yes|-y]
 wt setup
 wt config [--global|--local] [<key> [<value>]]
 wt doctor

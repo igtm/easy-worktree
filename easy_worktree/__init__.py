@@ -137,8 +137,8 @@ MESSAGES = {
         "ja": "警告: hook が終了コード {} で終了しました",
     },
     "usage_clean": {
-        "en": "Usage: wt clean (cl) [--days N] [--merged] [--closed] [--all]",
-        "ja": "使用方法: wt clean (cl) [--days N] [--merged] [--closed] [--all]",
+        "en": "Usage: wt clean (cl) [--days N] [--merged] [--closed] [--all] [--yes|-y]",
+        "ja": "使用方法: wt clean (cl) [--days N] [--merged] [--closed] [--all] [--yes|-y]",
     },
     "alias_updated": {
         "en": "Updated alias: {} -> {}",
@@ -2693,6 +2693,7 @@ def cmd_clean(args: list[str]):
         sys.exit(1)
 
     clean_all, _, _, _ = parse_clean_filter_options(args)
+    force_yes = "--yes" in args or "-y" in args
     worktrees = get_worktree_info(base_dir)
     targets = resolve_clean_targets(base_dir, worktrees, args)
 
@@ -2711,7 +2712,7 @@ def cmd_clean(args: list[str]):
         )
 
     # 確認
-    if not clean_all:
+    if not clean_all and not force_yes:
         try:
             response = input(msg("clean_confirm", len(targets)))
             if response.lower() not in ["y", "yes"]:
@@ -2785,7 +2786,7 @@ def _bash_completion_script() -> str:
             COMPREPLY=( $(compgen -W "${wt_names}" -- "${cur}") )
             ;;
         clean|cl)
-            COMPREPLY=( $(compgen -W "--days --merged --closed --all" -- "${cur}") )
+            COMPREPLY=( $(compgen -W "--days --merged --closed --all --yes -y" -- "${cur}") )
             ;;
         list|ls)
             COMPREPLY=( $(compgen -W "--pr --quiet -q --days --merged --closed --all --sort --asc --desc created last-commit name branch" -- "${cur}") )
@@ -2862,7 +2863,7 @@ def show_help():
         )
         print(f"  {'rm/remove <作業名> [-f|--force]':<55} - worktree を削除")
         print(
-            f"  {'clean (cl) [--days N] [--merged] [--closed] [--all]':<55} - 不要な worktree を削除"
+            f"  {'clean (cl) [--days N] [--merged] [--closed] [--all] [--yes|-y]':<55} - 不要な worktree を削除"
         )
         print(
             f"  {'setup (su)':<55} - 作業ディレクトリを初期化（ファイルコピー・フック実行）"
@@ -2903,7 +2904,7 @@ def show_help():
         print(f"  {'pr add <number>':<55} - Manage GitHub PRs as worktrees")
         print(f"  {'rm/remove <work_name> [-f|--force]':<55} - Remove a worktree")
         print(
-            f"  {'clean (cl) [--days N] [--merged] [--closed] [--all]':<55} - Remove unused/merged worktrees"
+            f"  {'clean (cl) [--days N] [--merged] [--closed] [--all] [--yes|-y]':<55} - Remove unused/merged worktrees"
         )
         print(
             f"  {'setup (su)':<55} - Setup worktree (copy files and run hooks)"
@@ -2920,7 +2921,7 @@ def show_help():
 
 def show_version():
     """Show version information"""
-    print("easy-worktree version 0.2.12")
+    print("easy-worktree version 0.2.13")
 
 
 def parse_global_args(argv: list[str]) -> list[str]:

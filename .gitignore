@@ -13,3 +13,4 @@ wheels/
 WT_*/
 .pytest_cache
 tmp/*tests/playground/
+tests/tests/

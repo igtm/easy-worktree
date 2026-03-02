@@ -46,7 +46,7 @@ exit
   - 現在の変更を stash し、新規 worktree 側へ移します。ショートカット: `wt st ...`
 - `wt rm <name> [-f|--force]`
   - worktree を削除します。
-- `wt clean [--days N] [--merged] [--closed] [--all]`
+- `wt clean [--days N] [--merged] [--closed] [--all] [--yes|-y]`
   - 条件に合う不要 worktree をまとめて削除します。ショートカット: `wt cl ...`
 - `wt pr add <number>`
   - PR から `pr@<number>` worktree を作成します（`gh` 必須）。

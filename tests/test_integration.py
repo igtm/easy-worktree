@@ -161,14 +161,10 @@ class TestWtIntegration(unittest.TestCase):
         if feature_custom_dir.exists():
             (feature_custom_dir / "dirty_file").write_text("dirty")
 
-        print("\nTesting clean --all...")
-        # wt clean --all still asks for confirmation
-        # We need to simulate merged or old worktrees to fully test clean logic, or force clean clean ones manually.
-        # But 'clean' in `easy-worktree` implementation checks for 'is_clean' (git status).
-        # We assume newly created worktree is clean.
-
-        # Note: In our current implementation, `wt clean --all` asks confirmation.
-        result = self.run_wt(["clean", "--all"], cwd=project_dir, input_str="y\n")
+        print("\nTesting clean --days 0 --yes...")
+        # --days 0 matches clean worktrees immediately.
+        # --yes should skip confirmation prompt.
+        result = self.run_wt(["clean", "--days", "0", "--yes"], cwd=project_dir)
 
         self.assertEqual(result.returncode, 0, f"Clean failed: {result.stderr}")
         # Verify deletion
