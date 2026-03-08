@@ -9,6 +9,7 @@ import shutil
 import sys
 import hashlib
 import difflib
+from importlib import metadata
 from pathlib import Path
 import re
 from datetime import datetime, timezone
@@ -2919,9 +2920,29 @@ def show_help():
         print(f"  {'--git-dir <path>':<55} - Explicitly set git directory")
 
 
+def _resolve_version() -> str:
+    pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    if pyproject_path.exists():
+        match = re.search(
+            r'^version\s*=\s*"(?P<version>\d+\.\d+\.\d+)"\s*$',
+            pyproject_path.read_text(encoding="utf-8"),
+            re.MULTILINE,
+        )
+        if match is not None:
+            return match.group("version")
+
+    for package_name in ("easy-worktree", "easy_worktree"):
+        try:
+            return metadata.version(package_name)
+        except metadata.PackageNotFoundError:
+            continue
+
+    return "unknown"
+
+
 def show_version():
     """Show version information"""
-    print("easy-worktree version 0.2.13")
+    print(f"easy-worktree version {_resolve_version()}")
 
 
 def parse_global_args(argv: list[str]) -> list[str]:
