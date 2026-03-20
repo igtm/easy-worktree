@@ -105,10 +105,59 @@ class TestWtIntegration(unittest.TestCase):
         wt_dir = project_dir / ".custom_worktrees" / "feature-custom"
         self.assertTrue(wt_dir.exists(), "Custom Worktree directory not created")
 
+    def test_03_rename(self):
+        """Test 'wt rename' for the current worktree"""
+        project_dir = self.test_dir / "memo-project"
+        old_wt_dir = project_dir / ".custom_worktrees" / "feature-custom"
+        new_wt_dir = project_dir / ".custom_worktrees" / "fix-custom"
+
+        (old_wt_dir / "local-note.txt").write_text("keep me")
+
+        print("\nTesting rename feature-custom -> fix-custom...")
+        result = self.run_wt(["rename", "fix-custom"], cwd=old_wt_dir)
+
+        self.assertEqual(result.returncode, 0, f"Rename failed: {result.stderr}")
+        self.assertFalse(old_wt_dir.exists(), "Old worktree directory still exists")
+        self.assertTrue(new_wt_dir.exists(), "Renamed worktree directory not created")
+        self.assertTrue((new_wt_dir / "local-note.txt").exists())
+
+        branch_result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=new_wt_dir,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertEqual(branch_result.stdout.strip(), "fix-custom")
+
+        list_result = self.run_wt(["list", "--quiet"], cwd=project_dir)
+        self.assertIn("fix-custom", list_result.stdout.splitlines())
+        self.assertNotIn("feature-custom", list_result.stdout.splitlines())
+
+    def test_03_rename_rejects_nested_name(self):
+        """Test 'wt rename' rejects names with path separators"""
+        project_dir = self.test_dir / "memo-project"
+        wt_dir = project_dir / ".custom_worktrees" / "fix-custom"
+
+        result = self.run_wt(["rename", "fix/custom"], cwd=wt_dir)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("simple names", result.stderr)
+        self.assertTrue(wt_dir.exists())
+
+        branch_result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=wt_dir,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertEqual(branch_result.stdout.strip(), "fix-custom")
+
     def test_04_setup(self):
         """Test 'wt setup'"""
         project_dir = self.test_dir / "memo-project"
-        wt_dir = project_dir / ".custom_worktrees" / "feature-custom"
+        wt_dir = project_dir / ".custom_worktrees" / "fix-custom"
 
         # Create a dummy file in base to sync
         # First ensure it's in config
@@ -156,10 +205,10 @@ class TestWtIntegration(unittest.TestCase):
         subprocess.run(["git", "clean", "-fdx"], cwd=wt_dir)
         subprocess.run(["git", "checkout", "."], cwd=wt_dir)
 
-        # Make feature-custom dirty so it doesn't get cleaned
-        feature_custom_dir = project_dir / ".custom_worktrees" / "feature-custom"
-        if feature_custom_dir.exists():
-            (feature_custom_dir / "dirty_file").write_text("dirty")
+        # Make fix-custom dirty so it doesn't get cleaned
+        fix_custom_dir = project_dir / ".custom_worktrees" / "fix-custom"
+        if fix_custom_dir.exists():
+            (fix_custom_dir / "dirty_file").write_text("dirty")
 
         print("\nTesting clean --days 0 --yes...")
         # --days 0 matches clean worktrees immediately.
@@ -191,19 +240,19 @@ class TestWtIntegration(unittest.TestCase):
         """Test 'wt rm'"""
         project_dir = self.test_dir / "memo-project"
 
-        # We used 'feature-custom' in previous tests
-        print("\nTesting rm feature-custom...")
+        # We used 'fix-custom' in previous tests
+        print("\nTesting rm fix-custom...")
 
-        wt_dir = project_dir / ".custom_worktrees" / "feature-custom"
+        wt_dir = project_dir / ".custom_worktrees" / "fix-custom"
         subprocess.run(["git", "clean", "-fdx"], cwd=wt_dir)
         subprocess.run(["git", "checkout", "."], cwd=wt_dir)
 
-        result = self.run_wt(["rm", "feature-custom"], cwd=project_dir)
+        result = self.run_wt(["rm", "fix-custom"], cwd=project_dir)
 
         self.assertEqual(result.returncode, 0, f"Rm failed: {result.stderr}")
         self.assertEqual(result.returncode, 0)
 
-        wt_dir = project_dir / ".custom_worktrees" / "feature-custom"
+        wt_dir = project_dir / ".custom_worktrees" / "fix-custom"
         self.assertFalse(wt_dir.exists(), "Worktree directory still exists")
 
     def test_09_gitignore(self):
@@ -376,6 +425,57 @@ esac
             text=True,
         )
         self.assertEqual(orig_status.stdout.strip(), "")
+
+    def test_12_rename_rejects_unmanaged_worktree(self):
+        """Test 'wt rename' rejects worktrees outside configured worktrees_dir"""
+        project_dir = self.test_dir / "rename-scope-test"
+        if project_dir.exists():
+            shutil.rmtree(project_dir)
+        project_dir.mkdir()
+        subprocess.run(["git", "init", "-b", "main"], cwd=project_dir, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"],
+            cwd=project_dir,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test User"],
+            cwd=project_dir,
+            check=True,
+        )
+        (project_dir / "README.md").write_text("Hello")
+        subprocess.run(["git", "add", "."], cwd=project_dir, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Initial commit"],
+            cwd=project_dir,
+            check=True,
+        )
+
+        self.run_wt(["init"], cwd=project_dir)
+
+        external_wt_dir = self.test_dir / "external-worktree"
+        if external_wt_dir.exists():
+            shutil.rmtree(external_wt_dir)
+        subprocess.run(
+            ["git", "worktree", "add", "-b", "external-wt", str(external_wt_dir), "main"],
+            cwd=project_dir,
+            check=True,
+        )
+
+        result = self.run_wt(["rename", "renamed-external"], cwd=external_wt_dir)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("managed sub-worktrees", result.stderr)
+        self.assertTrue(external_wt_dir.exists())
+
+        branch_result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=external_wt_dir,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertEqual(branch_result.stdout.strip(), "external-wt")
 
     def test_13_pr(self):
         """Test 'wt pr add' and 'wt pr co'"""

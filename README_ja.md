@@ -219,6 +219,15 @@ wt rm feature-1
 
 ディレクトリごと worktree を削除します。
 
+#### 現在の worktree をリネーム
+
+```bash
+wt rename fix-1
+```
+
+sub-worktree の中で実行すると、現在のブランチ名と worktree ディレクトリ名をまとめて変更し、Git の worktree metadata を修復します。main/base worktree は対象外です。
+現在の rollout では `/` を含まない単純な名前のみ対応で、設定された `worktrees_dir` 配下の管理対象 worktree に限定されます。
+
 ### 便利な機能
 
 #### ワークツリーの初期化 (ショートカット: `su`)
@@ -360,6 +369,7 @@ wt [-C <path>] [--git-dir <path> | --git-dir=<path>] <command> ...
 wt add <work_name> [<base_branch>] [--skip-setup|--no-setup] [--select [<command>...]]
 wt select [<name>|-] [<command>...]
 wt run <name> <command>...
+wt rename <new_name>
 wt rm <work_name> [-f|--force]
 wt list [--pr] [--quiet|-q] [--days N] [--merged] [--closed] [--all] [--sort created|last-commit|name|branch] [--asc|--desc]
 wt clean [--days N] [--merged] [--closed] [--all] [--yes|-y]

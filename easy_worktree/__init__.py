@@ -185,6 +185,10 @@ MESSAGES = {
         "en": "Usage: wt stash (st) <work_name> [<base_branch>]",
         "ja": "使用方法: wt stash (st) <work_name> [<base_branch>]",
     },
+    "usage_rename": {
+        "en": "Usage: wt rename <new_name>",
+        "ja": "使用方法: wt rename <新しい名前>",
+    },
     "usage_completion": {
         "en": "Usage: wt completion <bash|zsh>",
         "ja": "使用方法: wt completion <bash|zsh>",
@@ -214,6 +218,38 @@ MESSAGES = {
         "ja": "以前の選択が見つかりません",
     },
     "setting_up": {"en": "Setting up: {} -> {}", "ja": "セットアップ中: {} -> {}"},
+    "renaming_worktree": {
+        "en": "Renaming worktree: {} -> {}",
+        "ja": "worktree をリネーム中: {} -> {}",
+    },
+    "repairing_worktree": {
+        "en": "Repairing git worktree metadata: {}",
+        "ja": "git worktree metadata を修復中: {}",
+    },
+    "completed_rename": {
+        "en": "Completed: renamed {} -> {}",
+        "ja": "完了: {} -> {} にリネームしました",
+    },
+    "rename_main_not_supported": {
+        "en": "wt rename only supports sub-worktrees, not the main/base worktree",
+        "ja": "wt rename はサブ worktree のみ対応で、main/base worktree は対象外です",
+    },
+    "rename_detached_not_supported": {
+        "en": "wt rename does not support detached HEAD worktrees",
+        "ja": "wt rename は detached HEAD の worktree をサポートしません",
+    },
+    "rename_invalid_name": {
+        "en": "Invalid branch/worktree name: {}",
+        "ja": "無効なブランチ/worktree 名です: {}",
+    },
+    "rename_simple_names_only": {
+        "en": "wt rename currently supports simple names without path separators",
+        "ja": "wt rename は現在、パス区切りを含まない単純な名前のみ対応です",
+    },
+    "rename_managed_only": {
+        "en": "wt rename only supports managed sub-worktrees inside {}",
+        "ja": "wt rename は {} 配下の管理対象 sub-worktree のみ対応です",
+    },
     "completed_setup": {
         "en": "Completed setup of {} files",
         "ja": "{} 個のファイルをセットアップしました",
@@ -922,6 +958,103 @@ def get_worktree_entries(base_dir: Path) -> list[dict]:
         entry["is_bare"] = entry.get("is_bare", False)
 
     return entries
+
+
+def get_primary_worktree_path(base_dir: Path) -> Path:
+    """main/base worktree の実パスを返す"""
+    if is_bare_repository(base_dir):
+        return require_wt_home_dir(base_dir).resolve()
+    return base_dir.resolve()
+
+
+def get_worktree_root(base_dir: Path) -> Path:
+    """sub-worktree を配置するルートディレクトリを返す"""
+    config = load_config(base_dir)
+    worktrees_dir_name = config.get("worktrees_dir", ".worktrees")
+
+    if is_bare_repository(base_dir):
+        wt_home = require_wt_home_dir(base_dir)
+        base_parent = wt_home.parent
+        if worktrees_dir_name:
+            return (base_parent / worktrees_dir_name).resolve()
+        return base_parent.resolve()
+
+    return (base_dir / worktrees_dir_name).resolve()
+
+
+def get_worktree_name(base_dir: Path, worktree_path: Path) -> str:
+    """worktree path から CLI で使う論理名を返す"""
+    resolved_path = worktree_path.resolve()
+    primary_worktree = get_primary_worktree_path(base_dir)
+    if resolved_path == primary_worktree:
+        return "main"
+
+    worktree_root = get_worktree_root(base_dir)
+    try:
+        return resolved_path.relative_to(worktree_root).as_posix()
+    except ValueError:
+        return resolved_path.name
+
+
+def get_current_worktree(base_dir: Path, cwd: Path | None = None) -> dict | None:
+    """現在の CWD が属する worktree を返す"""
+    target_dir = (cwd or Path.cwd()).resolve()
+    matches = []
+
+    for wt in get_worktree_info(base_dir):
+        wt_path = Path(wt["path"]).resolve()
+        if target_dir == wt_path or target_dir.is_relative_to(wt_path):
+            matches.append((len(wt_path.as_posix()), wt))
+
+    if not matches:
+        return None
+
+    matches.sort(key=lambda item: item[0], reverse=True)
+    return matches[0][1]
+
+
+def rename_worktree_metadata(base_dir: Path, old_path: Path, new_path: Path):
+    """記録済み worktree metadata の path を更新する"""
+    metadata = load_worktree_metadata(base_dir)
+    old_resolved = str(old_path.resolve())
+    new_resolved = str(new_path.resolve())
+    updated = False
+
+    for item in metadata.get("worktrees", []):
+        if item.get("path") == old_resolved:
+            item["path"] = new_resolved
+            updated = True
+
+    if updated:
+        save_worktree_metadata(base_dir, metadata)
+
+
+def update_last_selection(base_dir: Path, old_name: str, new_name: str):
+    """rename 後に last_selection が古い名前を指さないようにする"""
+    last_sel_file = get_wt_dir(base_dir) / "last_selection"
+    if not last_sel_file.exists():
+        return
+
+    try:
+        current_value = last_sel_file.read_text().strip()
+    except Exception:
+        return
+
+    if current_value == old_name:
+        last_sel_file.write_text(new_name)
+
+
+def remove_empty_parent_dirs(path: Path, stop_at: Path):
+    """移動後に空になった親ディレクトリを worktree root まで掃除する"""
+    current = path.parent.resolve()
+    stop = stop_at.resolve()
+
+    while current != stop and current.is_relative_to(stop):
+        try:
+            current.rmdir()
+        except OSError:
+            break
+        current = current.parent
 
 
 def resolve_setup_source_dir(base_dir: Path, target_path: Path, config: dict) -> Path | None:
@@ -2385,6 +2518,148 @@ def cmd_remove(args: list[str]):
         sys.exit(1)
 
 
+def cmd_rename(args: list[str]):
+    """wt rename <new_name> - Rename the current worktree and branch"""
+    if any(arg in ["-h", "--help"] for arg in args):
+        print(msg("usage_rename"), file=sys.stderr)
+        return
+
+    if len(args) != 1:
+        print(msg("usage_rename"), file=sys.stderr)
+        sys.exit(1)
+
+    base_dir = find_base_dir()
+    if not base_dir:
+        print(msg("error", msg("base_not_found")), file=sys.stderr)
+        sys.exit(1)
+
+    current_worktree = get_current_worktree(base_dir)
+    if not current_worktree:
+        print(msg("error", msg("base_not_found")), file=sys.stderr)
+        sys.exit(1)
+
+    current_path = Path(current_worktree["path"]).resolve()
+    if current_path == get_primary_worktree_path(base_dir):
+        print(msg("error", msg("rename_main_not_supported")), file=sys.stderr)
+        sys.exit(1)
+
+    worktree_root = get_worktree_root(base_dir)
+    if not current_path.is_relative_to(worktree_root):
+        print(
+            msg("error", msg("rename_managed_only", worktree_root)),
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    current_branch = current_worktree.get("branch", "")
+    if not current_branch or current_branch == "DETACHED":
+        print(msg("error", msg("rename_detached_not_supported")), file=sys.stderr)
+        sys.exit(1)
+
+    new_name = args[0]
+    if "/" in new_name or "\\" in new_name:
+        print(msg("error", msg("rename_simple_names_only")), file=sys.stderr)
+        sys.exit(1)
+
+    check_ref = run_command(
+        ["git", "check-ref-format", "--branch", new_name],
+        cwd=current_path,
+        check=False,
+        apply_global_git_dir=False,
+    )
+    if check_ref.returncode != 0:
+        print(msg("error", msg("rename_invalid_name", new_name)), file=sys.stderr)
+        sys.exit(1)
+
+    new_path = (worktree_root / new_name).resolve()
+    if not new_path.is_relative_to(worktree_root):
+        print(msg("error", msg("rename_invalid_name", new_name)), file=sys.stderr)
+        sys.exit(1)
+
+    if new_path.exists() and new_path != current_path:
+        print(msg("error", msg("already_exists", new_path)), file=sys.stderr)
+        sys.exit(1)
+
+    old_name = get_worktree_name(base_dir, current_path)
+    print(msg("renaming_worktree", old_name, new_name), file=sys.stderr)
+
+    branch_renamed = False
+    path_moved = False
+
+    try:
+        if current_branch != new_name:
+            rename_result = run_command(
+                ["git", "branch", "-m", new_name],
+                cwd=current_path,
+                check=False,
+                apply_global_git_dir=False,
+            )
+            if rename_result.returncode != 0:
+                raise RuntimeError(
+                    rename_result.stderr.strip()
+                    or msg("rename_invalid_name", new_name)
+                )
+            branch_renamed = True
+
+        if current_path != new_path:
+            new_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(current_path), str(new_path))
+            path_moved = True
+
+        print(msg("repairing_worktree", new_path), file=sys.stderr)
+        repair_result = run_command(
+            ["git", "worktree", "repair", str(new_path)],
+            cwd=base_dir,
+            check=False,
+        )
+        if repair_result.returncode != 0:
+            raise RuntimeError(repair_result.stderr.strip() or "git worktree repair failed")
+    except Exception as exc:
+        error_message = str(exc)
+
+        if path_moved and new_path.exists():
+            try:
+                current_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(new_path), str(current_path))
+            except Exception as rollback_exc:
+                print(
+                    msg(
+                        "error",
+                        f"{error_message}\nRollback failed while moving worktree back: {rollback_exc}",
+                    ),
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+        if branch_renamed:
+            rollback_result = run_command(
+                ["git", "branch", "-m", current_branch],
+                cwd=current_path,
+                check=False,
+                apply_global_git_dir=False,
+            )
+            if rollback_result.returncode != 0:
+                print(
+                    msg(
+                        "error",
+                        f"{error_message}\nRollback failed while restoring branch name: {rollback_result.stderr.strip()}",
+                    ),
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+        print(msg("error", error_message), file=sys.stderr)
+        sys.exit(1)
+
+    rename_worktree_metadata(base_dir, current_path, new_path)
+    update_last_selection(base_dir, old_name, new_name)
+
+    if path_moved:
+        remove_empty_parent_dirs(current_path, worktree_root)
+
+    print(msg("completed_rename", old_name, new_name), file=sys.stderr)
+
+
 def cmd_checkout(args: list[str]):
     """wt co/checkout <work_name> - Get path to a worktree (for cd)"""
     if len(args) < 1:
@@ -2757,7 +3032,7 @@ def _bash_completion_script() -> str:
     _init_completion || return
 
     local wt_bin="${words[0]}"
-    local commands="clone init add ad select sl list ls co checkout current cur stash st pr rm remove clean cl setup su run completion"
+    local commands="clone init add ad select sl list ls co checkout current cur stash st rename pr rm remove clean cl setup su run completion"
 
     if [[ ${cword} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands} --git-dir --help --version" -- "${cur}") )
@@ -2859,6 +3134,7 @@ def show_help():
         print(
             f"  {'stash (st) <作業名> [<base_branch>]':<55} - 現在の変更をスタッシュして新規 worktree に移動"
         )
+        print(f"  {'rename <新しい名前>':<55} - 現在の sub-worktree のブランチ名とディレクトリ名を同期リネーム")
         print(
             f"  {'pr add <番号>':<55} - GitHub PR を取得して worktree を作成/パス表示"
         )
@@ -2902,6 +3178,7 @@ def show_help():
         print(
             f"  {'stash (st) <work_name> [<base_branch>]':<55} - Stash current changes and move to new worktree"
         )
+        print(f"  {'rename <new_name>':<55} - Rename the current sub-worktree branch and directory together")
         print(f"  {'pr add <number>':<55} - Manage GitHub PRs as worktrees")
         print(f"  {'rm/remove <work_name> [-f|--force]':<55} - Remove a worktree")
         print(
@@ -3143,6 +3420,8 @@ def main():
         cmd_setup(args)
     elif command in ["stash", "st"]:
         cmd_stash(args)
+    elif command == "rename":
+        cmd_rename(args)
     elif command == "pr":
         cmd_pr(args)
     elif command == "select" or command == "sl":
