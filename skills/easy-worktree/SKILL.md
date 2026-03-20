@@ -44,6 +44,9 @@ exit
   - worktree 一覧を表示します。ショートカット: `wt ls ...`
 - `wt stash <name> [base_branch]`
   - 現在の変更を stash し、新規 worktree 側へ移します。ショートカット: `wt st ...`
+- `wt rename <new_name>`
+  - 現在の sub-worktree のブランチ名とディレクトリ名をまとめて変更します。
+  - 現状は `/` を含まない単純な名前だけを対象にします。
 - `wt rm <name> [-f|--force]`
   - worktree を削除します。
 - `wt clean [--days N] [--merged] [--closed] [--all] [--yes|-y]`
@@ -92,6 +95,15 @@ wt select pr@123
 wt list --days 30
 wt clean --merged
 ```
+
+### 5) 作業名を後から整える
+
+```bash
+wt rename fix-login-bug
+```
+
+- 現在の sub-worktree で使っている branch 名とディレクトリ名をそろえて直せます。
+- `worktrees_dir` 配下の managed worktree だけが対象です。
 
 ## bare リポジトリでの使い方
 

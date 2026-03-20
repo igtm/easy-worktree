@@ -220,6 +220,15 @@ wt rm feature-1
 
 Removes the worktree and its directory.
 
+#### Rename the current worktree
+
+```bash
+wt rename fix-1
+```
+
+Run this inside a sub-worktree to rename the current branch and worktree directory together, then repair Git's worktree metadata. The main/base worktree is intentionally excluded from this command.
+The current rollout only supports simple names without `/`, and it only works for managed worktrees inside your configured `worktrees_dir`.
+
 ### Useful Features
 
 #### Setup Worktree (shortcut: `su`)
@@ -361,6 +370,7 @@ wt [-C <path>] [--git-dir <path> | --git-dir=<path>] <command> ...
 wt add <work_name> [<base_branch>] [--skip-setup|--no-setup] [--select [<command>...]]
 wt select [<name>|-] [<command>...]
 wt run <name> <command>...
+wt rename <new_name>
 wt rm <work_name> [-f|--force]
 wt list [--pr] [--quiet|-q] [--days N] [--merged] [--closed] [--all] [--sort created|last-commit|name|branch] [--asc|--desc]
 wt clean [--days N] [--merged] [--closed] [--all] [--yes|-y]
